@@ -1,6 +1,30 @@
-#ifndef INCLUDE_CATALOG_SCHEMA_H_
-#define INCLUDE_CATALOG_SCHEMA_H_
+#ifndef MINI_DBMS_SCHEMA_H
+#define MINI_DBMS_SCHEMA_H
 
-// schema.h
+#include <string>
+#include <vector>
+#include <cstdint>
 
-#endif // INCLUDE_CATALOG_SCHEMA_H_
+namespace minidbms {
+  enum class TypeId { INTEGER, VARCHAR, BOOLEAN };
+
+  struct Column {
+    std::string name;
+    TypeId type;
+    uint32_t length;
+  };
+
+  class Schema {
+    public:
+      explicit Schema(std::vector<Column> columns) : columns_(std::move(columns)) {}
+
+      const std::vector<Column>& GetColumns() const { return columns_; }
+      uint32_t GetColumnCount() const { return static_cast<uint32_t>(columns_.size()); }
+
+    private:
+      std::vector<Column> columns_;
+  };
+
+}
+
+#endif // MINI_DBMS_SCHEMA_H

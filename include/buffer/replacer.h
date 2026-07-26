@@ -1,6 +1,20 @@
-#ifndef INCLUDE_BUFFER_REPLACER_H_
-#define INCLUDE_BUFFER_REPLACER_H_
+#ifndef MINI_DBMS_REPLACER_H
+#define MINI_DBMS_REPLACER_H
 
-// replacer.h
+#include "../common/types.h"
 
-#endif // INCLUDE_BUFFER_REPLACER_H_
+namespace minidbms {
+  class Replacer {
+    public:
+      Replacer() = default;
+      virtual ~Replacer() = default;
+
+      virtual bool Victim(FrameId* frame_id) = 0;
+      virtual void Pin(FrameId frame_id) = 0;
+      virtual void Unpin(FrameId frame_id) = 0;
+      virtual std::size_t Size() = 0;
+  };
+
+}
+
+#endif // MINI_DBMS_REPLACER_H

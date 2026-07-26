@@ -1,6 +1,26 @@
-#ifndef INCLUDE_QUERY_PARSER_H_
-#define INCLUDE_QUERY_PARSER_H_
+#ifndef MINI_DBMS_PARSER_H
+#define MINI_DBMS_PARSER_H
 
-// parser.h
+#include "../query/tokenizer.h"
+#include "../common/status.h"
+#include <memory>
 
-#endif // INCLUDE_QUERY_PARSER_H_
+namespace minidbms {
+  class ASTNode {
+    public:
+      virtual ~ASTNode() = default;
+  };
+
+  class Parser {
+    public:
+      explicit Parser(std::vector<Token> tokens) : tokens_(std::move(tokens)) {}
+      Status Parse(std::unique_ptr<ASTNode>* ast);
+
+    private:
+      std::vector<Token> tokens_;
+      size_t cursor_{0};
+  };
+
+}
+
+#endif // MINI_DBMS_PARSER_H
