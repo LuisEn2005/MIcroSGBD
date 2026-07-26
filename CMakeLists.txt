@@ -107,3 +107,44 @@ if(NOT MSVC)
     target_compile_options(storage_tests PRIVATE -Wall -Wextra -Wpedantic)
     target_compile_options(query_tests PRIVATE -Wall -Wextra -Wpedantic)
 endif()
+
+add_test(
+    NAME storage_sprint1_tests
+    COMMAND storage_tests
+)
+
+# ==========================================
+# Pruebas del Buffer Pool (Integrante 2)
+# ==========================================
+
+add_executable(
+    buffer_tests
+    tests/buffer_tests.cpp
+)
+
+target_link_libraries(
+    buffer_tests
+    PRIVATE
+        mini_sgbd_core
+)
+
+if(MSVC)
+    target_compile_options(
+        buffer_tests
+        PRIVATE
+            /W4
+    )
+else()
+    target_compile_options(
+        buffer_tests
+        PRIVATE
+            -Wall
+            -Wextra
+            -Wpedantic
+    )
+endif()
+
+add_test(
+    NAME buffer_sprint1_tests
+    COMMAND buffer_tests
+)
