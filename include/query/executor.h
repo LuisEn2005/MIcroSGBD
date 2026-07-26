@@ -2,20 +2,25 @@
 #define MINI_DBMS_EXECUTOR_H
 
 #include "../query/parser.h"
-#include "../storage/record.h"
+#include "../query/operators/abstract_operator.h"
 #include "../metrics/query_stats.h"
-#include "../common/status.h"
+#include "../catalog/catalog_manager.h"
+#include "../buffer/buffer_pool_manager.h"
 
 namespace minidbms {
-  class Executor {
-    public:
-      Executor() = default;
-      virtual ~Executor() = default;
+    class QueryExecutor {
+        public:
+            QueryExecutor(CatalogManager* catalog, BufferPoolManager* bpm)
+                : catalog_(catalog), bpm_(bpm) {}
 
-      virtual Status Init() = 0;
-      virtual Status Next(Record* record, RecordID* rid) = 0;
-      virtual const QueryStats& GetStats() const = 0;
-  };
+            Status Execute(const SQLStatement& stmt, QueryStats* stats);
+
+        private:
+            std::unique_ptr<AbstractOperator> BuildPlan(const SelectStatement& select_stmt);
+
+            CatalogManager* catalog_;
+            BufferPoolManager* bpm_;
+    };
 
 }
 
