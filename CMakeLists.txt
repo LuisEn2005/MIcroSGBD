@@ -18,22 +18,23 @@ find_package(Threads REQUIRED)
 
 # ==========================================
 # Código principal del Mini-SGBD
+# Lista explícita de archivos de código fuente
 # ==========================================
 
-# Busca todos los archivos .cpp de src/
-file(
-    GLOB_RECURSE MINI_SGBD_SOURCES
-    "${CMAKE_CURRENT_SOURCE_DIR}/src/*.cpp"
+set(MINI_SGBD_SOURCES
+    # Módulo Storage (Integrante 1)
+    src/storage/disk_manager.cpp
+    src/storage/page.cpp
+    src/storage/slotted_page.cpp
+
+    # Módulo Query Engine (Integrante 3)
+    src/query/tokenizer.cpp
+    src/query/parser.cpp
+
+    # Añade aquí más fuentes .cpp conforme las vayas creando
 )
 
-# main.cpp no debe formar parte de la librería,
-# porque contiene la función main().
-list(
-    REMOVE_ITEM MINI_SGBD_SOURCES
-    "${CMAKE_CURRENT_SOURCE_DIR}/src/main.cpp"
-)
-
-# Librería con DiskManager, Page, SlottedPage, etc.
+# Librería principal
 add_library(
     mini_sgbd_core
     ${MINI_SGBD_SOURCES}
@@ -87,39 +88,22 @@ target_link_libraries(
 )
 
 # ==========================================
-# Pruebas
+# Pruebas (CTest)
 # ==========================================
 
 enable_testing()
 
-add_executable(
-    storage_tests
-    tests/storage_tests.cpp
-)
+# Pruebas de Storage
+add_executable(storage_tests tests/storage_tests.cpp)
+target_link_libraries(storage_tests PRIVATE mini_sgbd_core)
+add_test(NAME StorageTests COMMAND storage_tests)
 
-target_link_libraries(
-    storage_tests
-    PRIVATE
-        mini_sgbd_core
-)
+# Pruebas del Query Engine (Corregido: mini_sgbd_core)
+add_executable(query_tests tests/query_tests.cpp)
+target_link_libraries(query_tests PRIVATE mini_sgbd_core)
+add_test(NAME QueryTests COMMAND query_tests)
 
-if(MSVC)
-    target_compile_options(
-        storage_tests
-        PRIVATE
-            /W4
-    )
-else()
-    target_compile_options(
-        storage_tests
-        PRIVATE
-            -Wall
-            -Wextra
-            -Wpedantic
-    )
+if(NOT MSVC)
+    target_compile_options(storage_tests PRIVATE -Wall -Wextra -Wpedantic)
+    target_compile_options(query_tests PRIVATE -Wall -Wextra -Wpedantic)
 endif()
-
-add_test(
-    NAME storage_sprint1_tests
-    COMMAND storage_tests
-)
