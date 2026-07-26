@@ -1,0 +1,6 @@
+#ifndef INCLUDE_METRICS_QUERY_STATS_H_
+#define INCLUDE_METRICS_QUERY_STATS_H_
+
+// query_stats.h
+
+#endif // INCLUDE_METRICS_QUERY_STATS_H_

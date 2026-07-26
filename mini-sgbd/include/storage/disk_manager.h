@@ -1,0 +1,6 @@
+#ifndef INCLUDE_STORAGE_DISK_MANAGER_H_
+#define INCLUDE_STORAGE_DISK_MANAGER_H_
+
+// disk_manager.h
+
+#endif // INCLUDE_STORAGE_DISK_MANAGER_H_

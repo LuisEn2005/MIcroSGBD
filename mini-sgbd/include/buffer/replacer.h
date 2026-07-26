@@ -1,0 +1,6 @@
+#ifndef INCLUDE_BUFFER_REPLACER_H_
+#define INCLUDE_BUFFER_REPLACER_H_
+
+// replacer.h
+
+#endif // INCLUDE_BUFFER_REPLACER_H_

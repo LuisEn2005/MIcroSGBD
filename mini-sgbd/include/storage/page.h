@@ -1,0 +1,6 @@
+#ifndef INCLUDE_STORAGE_PAGE_H_
+#define INCLUDE_STORAGE_PAGE_H_
+
+// page.h
+
+#endif // INCLUDE_STORAGE_PAGE_H_

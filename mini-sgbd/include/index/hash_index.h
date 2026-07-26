@@ -1,0 +1,6 @@
+#ifndef INCLUDE_INDEX_HASH_INDEX_H_
+#define INCLUDE_INDEX_HASH_INDEX_H_
+
+// hash_index.h
+
+#endif // INCLUDE_INDEX_HASH_INDEX_H_

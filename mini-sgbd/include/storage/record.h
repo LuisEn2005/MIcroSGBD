@@ -1,0 +1,6 @@
+#ifndef INCLUDE_STORAGE_RECORD_H_
+#define INCLUDE_STORAGE_RECORD_H_
+
+// record.h
+
+#endif // INCLUDE_STORAGE_RECORD_H_

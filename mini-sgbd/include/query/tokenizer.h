@@ -1,0 +1,6 @@
+#ifndef INCLUDE_QUERY_TOKENIZER_H_
+#define INCLUDE_QUERY_TOKENIZER_H_
+
+// tokenizer.h
+
+#endif // INCLUDE_QUERY_TOKENIZER_H_

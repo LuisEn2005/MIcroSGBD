@@ -1,0 +1,6 @@
+#ifndef INCLUDE_COMMON_STATUS_H_
+#define INCLUDE_COMMON_STATUS_H_
+
+// status.h
+
+#endif // INCLUDE_COMMON_STATUS_H_

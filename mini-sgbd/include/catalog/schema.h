@@ -1,0 +1,6 @@
+#ifndef INCLUDE_CATALOG_SCHEMA_H_
+#define INCLUDE_CATALOG_SCHEMA_H_
+
+// schema.h
+
+#endif // INCLUDE_CATALOG_SCHEMA_H_

@@ -1,0 +1,6 @@
+#ifndef INCLUDE_COMMON_CONFIG_H_
+#define INCLUDE_COMMON_CONFIG_H_
+
+// config.h
+
+#endif // INCLUDE_COMMON_CONFIG_H_

@@ -1,0 +1,6 @@
+#ifndef INCLUDE_BUFFER_FRAME_H_
+#define INCLUDE_BUFFER_FRAME_H_
+
+// frame.h
+
+#endif // INCLUDE_BUFFER_FRAME_H_

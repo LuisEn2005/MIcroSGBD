@@ -1,0 +1,6 @@
+#ifndef INCLUDE_STORAGE_HEAP_FILE_H_
+#define INCLUDE_STORAGE_HEAP_FILE_H_
+
+// heap_file.h
+
+#endif // INCLUDE_STORAGE_HEAP_FILE_H_

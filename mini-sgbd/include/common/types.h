@@ -1,0 +1,6 @@
+#ifndef INCLUDE_COMMON_TYPES_H_
+#define INCLUDE_COMMON_TYPES_H_
+
+// types.h
+
+#endif // INCLUDE_COMMON_TYPES_H_

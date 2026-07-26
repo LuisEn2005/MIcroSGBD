@@ -1,0 +1,6 @@
+#ifndef INCLUDE_QUERY_PARSER_H_
+#define INCLUDE_QUERY_PARSER_H_
+
+// parser.h
+
+#endif // INCLUDE_QUERY_PARSER_H_

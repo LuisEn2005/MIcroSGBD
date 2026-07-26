@@ -1,0 +1,6 @@
+#ifndef INCLUDE_INDEX_BUCKET_PAGE_H_
+#define INCLUDE_INDEX_BUCKET_PAGE_H_
+
+// bucket_page.h
+
+#endif // INCLUDE_INDEX_BUCKET_PAGE_H_

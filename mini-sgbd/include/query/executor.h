@@ -1,0 +1,6 @@
+#ifndef INCLUDE_QUERY_EXECUTOR_H_
+#define INCLUDE_QUERY_EXECUTOR_H_
+
+// executor.h
+
+#endif // INCLUDE_QUERY_EXECUTOR_H_
