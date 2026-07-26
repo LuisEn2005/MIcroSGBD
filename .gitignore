@@ -2,3 +2,7 @@ build/
 *.swp
 *.o
 mini-sgbd
+
+data/*.db
+data/*.idx
+results/*.csv
