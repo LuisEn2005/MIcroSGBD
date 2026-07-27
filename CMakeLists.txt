@@ -27,11 +27,15 @@ set(MINI_SGBD_SOURCES
     src/storage/page.cpp
     src/storage/slotted_page.cpp
 
+    # Módulo Buffer Pool (Integrante 2)
+    src/buffer/clock_replacer.cpp
+    src/buffer/buffer_pool_manager.cpp
+    
     # Módulo Query Engine (Integrante 3)
     src/query/tokenizer.cpp
     src/query/parser.cpp
 
-    # Añade aquí más fuentes .cpp conforme las vayas creando
+    # Aumentar fuentes .cpp
 )
 
 # Librería principal
