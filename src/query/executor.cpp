@@ -1,214 +1,562 @@
-#include "../../include/query/executor.h"
-#include "../../include/query/operators/seq_scan_operator.h"
-#include "../../include/query/operators/index_scan_operator.h"
-#include "../../include/query/operators/filter_operator.h"
-#include "../../include/query/operators/projection_operator.h"
-#include "../../include/storage/heap_file.h"
+#include "query/executor.h"
+
+#include "index/index_key.h"
+#include "query/operators/filter_operator.h"
+#include "query/operators/index_scan_operator.h"
+#include "query/operators/projection_operator.h"
+#include "query/operators/seq_scan_operator.h"
+#include "storage/heap_file.h"
+#include "storage/record_codec.h"
+
+#include <algorithm>
 #include <chrono>
+#include <cctype>
+#include <limits>
+#include <string>
 #include <vector>
 
 namespace minidbms {
-    Status QueryExecutor::Execute(const SQLStatement& stmt, QueryStats* stats) {
-        if (stats) {
-            stats->Reset();
+namespace {
+
+Status FindColumn(
+    const Schema& schema,
+    const std::string& column_name,
+    uint32_t* column_index
+) {
+    if (column_index == nullptr) {
+        return Status(
+            StatusCode::INVALID_ARGUMENT,
+            "Column index output cannot be null"
+        );
+    }
+
+    const auto& columns = schema.GetColumns();
+
+    for (uint32_t index = 0;
+         index < columns.size();
+         ++index) {
+        if (columns[index].name == column_name) {
+            *column_index = index;
+            return Status::OK();
         }
+    }
 
-        auto start_time = std::chrono::high_resolution_clock::now();
+    return Status::NotFound(
+        "Column does not exist: " + column_name
+    );
+}
 
-        Status status = Status::OK();
+Status ParseLiteral(
+    const Column& column,
+    const std::string& text,
+    FieldValue* value
+) {
+    if (value == nullptr) {
+        return Status(
+            StatusCode::INVALID_ARGUMENT,
+            "Literal output cannot be null"
+        );
+    }
 
-        if (stmt.GetType() == StatementType::SELECT) {
-            auto* select_stmt = dynamic_cast<const SelectStatement*>(&stmt);
-            if (select_stmt) {
-                auto plan = BuildPlan(*select_stmt);
-                if (!plan) {
-                    return Status(StatusCode::INVALID_ARGUMENT, "Error al construir el plan de ejecucion");
+    try {
+        switch (column.type) {
+            case TypeId::INTEGER: {
+                std::size_t consumed = 0;
+                const long long parsed =
+                    std::stoll(text, &consumed);
+
+                if (consumed != text.size() ||
+                    parsed <
+                        std::numeric_limits<int32_t>::min() ||
+                    parsed >
+                        std::numeric_limits<int32_t>::max()) {
+                    return Status(
+                        StatusCode::INVALID_ARGUMENT,
+                        "Invalid INTEGER literal"
+                    );
                 }
 
+                *value = static_cast<int32_t>(parsed);
+                return Status::OK();
+            }
+
+            case TypeId::VARCHAR:
+                if (column.length > 0 &&
+                    text.size() > column.length) {
+                    return Status(
+                        StatusCode::INVALID_ARGUMENT,
+                        "VARCHAR literal exceeds declared length"
+                    );
+                }
+
+                *value = text;
+                return Status::OK();
+
+            case TypeId::BOOLEAN: {
+                std::string normalized = text;
+                std::transform(
+                    normalized.begin(),
+                    normalized.end(),
+                    normalized.begin(),
+                    [](unsigned char character) {
+                        return static_cast<char>(
+                            std::tolower(character)
+                        );
+                    }
+                );
+
+                if (normalized == "true" ||
+                    normalized == "1") {
+                    *value = true;
+                    return Status::OK();
+                }
+
+                if (normalized == "false" ||
+                    normalized == "0") {
+                    *value = false;
+                    return Status::OK();
+                }
+
+                return Status(
+                    StatusCode::INVALID_ARGUMENT,
+                    "Invalid BOOLEAN literal"
+                );
+            }
+        }
+    } catch (const std::exception&) {
+        return Status(
+            StatusCode::INVALID_ARGUMENT,
+            "Invalid typed literal"
+        );
+    }
+
+    return Status(
+        StatusCode::INVALID_ARGUMENT,
+        "Unsupported literal type"
+    );
+}
+
+} // namespace
+
+Status QueryExecutor::Execute(
+    const SQLStatement& statement,
+    QueryStats* stats
+) {
+    QueryStats local_stats;
+    QueryStats* active_stats =
+        stats != nullptr ? stats : &local_stats;
+
+    active_stats->Reset();
+
+    if (catalog_ == nullptr || bpm_ == nullptr) {
+        return Status(
+            StatusCode::INVALID_ARGUMENT,
+            "Executor dependencies cannot be null"
+        );
+    }
+
+    const Status catalog_status =
+        catalog_->GetInitializationStatus();
+
+    if (!catalog_status.ok()) {
+        return catalog_status;
+    }
+
+    bpm_->ResetStats();
+    const auto start_time =
+        std::chrono::steady_clock::now();
+
+    Status status = Status::OK();
+
+    switch (statement.GetType()) {
+        case StatementType::SELECT: {
+            const auto* select_statement =
+                dynamic_cast<const SelectStatement*>(
+                    &statement
+                );
+
+            if (select_statement == nullptr) {
+                status = Status(
+                    StatusCode::INVALID_ARGUMENT,
+                    "Invalid SELECT statement"
+                );
+                break;
+            }
+
+            std::unique_ptr<AbstractOperator> plan;
+            status = BuildPlan(
+                *select_statement,
+                active_stats,
+                &plan
+            );
+
+            if (status.ok()) {
                 status = plan->Open();
+            }
 
-                if (status.ok()) {
-                    Record record;
-                    RecordID rid;
+            if (status.ok()) {
+                Record record;
+                RecordID rid;
 
-                    while (plan->Next(&record, &rid)) {
-                        if (stats) {
-                            stats->records_examined++;
-                        }
-                    }
+                while (plan->Next(&record, &rid)) {
+                    ++active_stats->rows_returned;
+                }
 
+                const Status close_status =
                     plan->Close();
+
+                if (!close_status.ok()) {
+                    status = close_status;
                 }
             }
+
+            break;
         }
 
-        if (stats) {
-            auto end_time = std::chrono::high_resolution_clock::now();
-            auto duration = std::chrono::duration_cast<
-                std::chrono::microseconds
-                >(end_time - start_time);
-            stats->execution_time_ms = duration.count() / 1000.0;
-        }
+        case StatementType::CREATE_INDEX: {
+            const auto* create_statement =
+                dynamic_cast<const CreateIndexStatement*>(
+                    &statement
+                );
 
-        if (stmt.GetType() == StatementType::CREATE_INDEX) {
-            auto* create_idx_stmt = dynamic_cast<const CreateIndexStatement*>(&stmt);
-            if (create_idx_stmt) {
-                PageId first_page_id = INVALID_PAGE_ID;
-                status = catalog_->GetTableFirstPageId(create_idx_stmt->table_name, &first_page_id);
-                if (!status.ok()) return status;
-
-                Schema schema({});
-                status = catalog_->GetTableSchema(create_idx_stmt->table_name, &schema);
-                if (!status.ok()) return status;
-
-                int target_col_idx = -1;
-                const auto& cols = schema.GetColumns();
-                for (size_t i = 0; i < cols.size(); ++i) {
-                    if (cols[i].name == create_idx_stmt->column_name) {
-                        target_col_idx = static_cast<int>(i);
-                        break;
-                    }
-                }
-
-                if (target_col_idx == -1) {
-                    return Status(StatusCode::INVALID_ARGUMENT, "Columna no encontrada para indice");
-                }
-
-                PageId index_header_page_id = INVALID_PAGE_ID;
-                Page* header_page = bpm_->NewPage(&index_header_page_id);
-                if (!header_page) {
-                    return Status(StatusCode::OUT_OF_MEMORY, "No hay paginas para el indice");
-                }
-                bpm_->UnpinPage(index_header_page_id, true);
-
-                auto index = new HashIndex(bpm_, index_header_page_id);
-
-                HeapFile heap_file(bpm_, first_page_id);
-                SeqScanOperator scan(&heap_file);
-
-                if (scan.Open().ok()) {
-                    Record record;
-                    RecordID rid;
-                    while (scan.Next(&record, &rid)) {
-                        const char* data = record.GetData();
-                        int32_t val = *reinterpret_cast<const int32_t*>(data + (target_col_idx * sizeof(int32_t)));
-                        std::string key = std::to_string(val);
-                        index->Insert(key, rid);
-                    }
-                    scan.Close();
-                }
-
-                status = catalog_->CreateIndex(
-                        create_idx_stmt->index_name,
-                        create_idx_stmt->table_name,
-                        create_idx_stmt->column_name,
-                        index
-                        );
+            if (create_statement == nullptr) {
+                status = Status(
+                    StatusCode::INVALID_ARGUMENT,
+                    "Invalid CREATE INDEX statement"
+                );
+                break;
             }
+
+            status = ExecuteCreateIndex(
+                *create_statement
+            );
+            break;
         }
-        return Status::OK();
+
+        case StatementType::INSERT:
+            status = Status(
+                StatusCode::INVALID_ARGUMENT,
+                "INSERT execution belongs to Sprint 4"
+            );
+            break;
+
+        default:
+            status = Status(
+                StatusCode::INVALID_ARGUMENT,
+                "Statement execution is not implemented"
+            );
+            break;
     }
 
-    std::unique_ptr<AbstractOperator> QueryExecutor::BuildPlan(
-            const SelectStatement& select_stmt
-            ) {
-        Schema schema({});
-        PageId first_page_id = INVALID_PAGE_ID;
+    active_stats->buffer_hits =
+        bpm_->GetBufferHits();
+    active_stats->buffer_misses =
+        bpm_->GetBufferMisses();
+    active_stats->disk_reads =
+        bpm_->GetDiskReads();
+    active_stats->disk_writes =
+        bpm_->GetDiskWrites();
 
-        Status status = catalog_->GetTableSchema(
-                select_stmt.table_name, 
-                &schema
-                );
+    const auto end_time =
+        std::chrono::steady_clock::now();
 
-        if (!status.ok()) {
-            return nullptr;
-        }
+    active_stats->execution_time_ms =
+        std::chrono::duration<double, std::milli>(
+            end_time - start_time
+        ).count();
 
-        status = catalog_->GetTableFirstPageId(
-                select_stmt.table_name,
-                &first_page_id
-                );
+    return status;
+}
 
-        if (!status.ok()) {
-            return nullptr;
-        }
-
-        auto heap_file = std::make_unique<HeapFile>(
-                bpm_, 
-                first_page_id
-                );
-
-        std::unique_ptr<AbstractOperator> plan = nullptr;
-        int index_cond_idx = -1;
-        std::string search_key = "";
-
-        for (size_t i = 0; i < select_stmt.conditions.size(); ++i) {
-            const auto& cond = select_stmt.conditions[i];
-            if (cond.op == "=" || cond.op == "==") {
-                if (catalog_->HasIndex(select_stmt.table_name, cond.column)) {
-                    index_cond_idx = static_cast<int>(i);
-                    search_key = cond.value;
-                    break;
-                }
-            }
-
-        if (index_cond_idx != -1) {
-            const auto& cond = select_stmt.conditions[index_cond_idx];
-            HashIndex* index = catalog_->GetIndex(select_stmt.table_name, cond.column);
-
-            plan = std::make_unique<IndexScanOperator>(
-                    index,
-                    heap_file.release(),
-                    search_key
-                    );
-
-            for (size_t i = 0; i < select_stmt.conditions.size(); ++i) {
-                if (static_cast<int>(i) == index_cond_idx) continue;
-                plan = std::make_unique<FilterOperator>(
-                        std::move(plan),
-                        select_stmt.conditions[i]
-                        );
-            }
-        } else {
-            auto scan = std::make_unique<SeqScanOperator>(
-                    heap_file.release()
-                    );
-            plan = std::move(scan);
-
-            if (!select_stmt.conditions.empty()) {
-                for (const auto& condition : select_stmt.conditions) {
-                    auto filter = std::make_unique<FilterOperator>(
-                            std::move(plan),
-                            condition
-                            );
-                    plan = std::move(filter);
-                }
-            }
-        }
-
-        if (!select_stmt.fields.empty() && select_stmt.fields[0] != "*") {
-            std::vector<uint32_t> col_indices;
-            const auto& columns = schema.GetColumns();
-
-            for (const auto& field_name : select_stmt.fields) {
-                for (uint32_t i = 0; i < columns.size(); ++i) {
-                    if (columns[i].name == field_name) {
-                        col_indices.push_back(i);
-                        break;
-                    }
-                }
-            }
-
-            if (!col_indices.empty()) {
-                auto projection = std::make_unique<ProjectionOperator>(
-                        std::move(plan),
-                        col_indices
-                        );
-                plan = std::move(projection);
-            }
-        }
-
-        return plan;
+Status QueryExecutor::ExecuteCreateIndex(
+    const CreateIndexStatement& statement
+) {
+    if (catalog_->HasIndex(
+            statement.table_name,
+            statement.column_name
+        )) {
+        return Status(
+            StatusCode::INVALID_ARGUMENT,
+            "An index already exists for this table column"
+        );
     }
+
+    Schema schema({});
+    PageId first_page_id = INVALID_PAGE_ID;
+
+    Status status = catalog_->GetTableSchema(
+        statement.table_name,
+        &schema
+    );
+    if (!status.ok()) {
+        return status;
+    }
+
+    status = catalog_->GetTableFirstPageId(
+        statement.table_name,
+        &first_page_id
+    );
+    if (!status.ok()) {
+        return status;
+    }
+
+    uint32_t column_index = 0;
+    status = FindColumn(
+        schema,
+        statement.column_name,
+        &column_index
+    );
+    if (!status.ok()) {
+        return status;
+    }
+
+    std::unique_ptr<HashIndex> index;
+    PageId header_page_id = INVALID_PAGE_ID;
+
+    status = HashIndex::Create(
+        bpm_,
+        HashIndex::DEFAULT_BUCKET_COUNT,
+        &index,
+        &header_page_id
+    );
+    if (!status.ok()) {
+        return status;
+    }
+
+    auto heap_file = std::make_unique<HeapFile>(
+        bpm_,
+        first_page_id
+    );
+
+    SeqScanOperator scan(std::move(heap_file));
+
+    status = scan.Open();
+    if (!status.ok()) {
+        return status;
+    }
+
+    Record record;
+    RecordID rid;
+
+    while (scan.Next(&record, &rid)) {
+        FieldValue value;
+
+        status = RecordCodec::GetValue(
+            schema,
+            record,
+            column_index,
+            &value
+        );
+        if (!status.ok()) {
+            scan.Close();
+            return status;
+        }
+
+        if (std::holds_alternative<std::monostate>(
+                value
+            )) {
+            continue;
+        }
+
+        std::string encoded_key;
+        status = IndexKey::Encode(
+            value,
+            &encoded_key
+        );
+        if (!status.ok()) {
+            scan.Close();
+            return status;
+        }
+
+        status = index->Insert(
+            encoded_key,
+            rid
+        );
+        if (!status.ok()) {
+            scan.Close();
+            return status;
+        }
+    }
+
+    status = scan.Close();
+    if (!status.ok()) {
+        return status;
+    }
+
+    return catalog_->CreateIndex(
+        statement.index_name,
+        statement.table_name,
+        statement.column_name,
+        std::move(index)
+    );
+}
+
+Status QueryExecutor::BuildPlan(
+    const SelectStatement& select_statement,
+    QueryStats* stats,
+    std::unique_ptr<AbstractOperator>* plan
+) {
+    if (plan == nullptr) {
+        return Status(
+            StatusCode::INVALID_ARGUMENT,
+            "Plan output cannot be null"
+        );
+    }
+
+    Schema schema({});
+    PageId first_page_id = INVALID_PAGE_ID;
+
+    Status status = catalog_->GetTableSchema(
+        select_statement.table_name,
+        &schema
+    );
+    if (!status.ok()) {
+        return status;
+    }
+
+    status = catalog_->GetTableFirstPageId(
+        select_statement.table_name,
+        &first_page_id
+    );
+    if (!status.ok()) {
+        return status;
+    }
+
+    auto heap_file = std::make_unique<HeapFile>(
+        bpm_,
+        first_page_id
+    );
+
+    std::unique_ptr<AbstractOperator> current_plan;
+    int indexed_condition = -1;
+    std::string encoded_key;
+
+    for (std::size_t index = 0;
+         index < select_statement.conditions.size();
+         ++index) {
+        const Condition& condition =
+            select_statement.conditions[index];
+
+        if (condition.op != "=" ||
+            !catalog_->HasIndex(
+                select_statement.table_name,
+                condition.column
+            )) {
+            continue;
+        }
+
+        uint32_t column_index = 0;
+        status = FindColumn(
+            schema,
+            condition.column,
+            &column_index
+        );
+        if (!status.ok()) {
+            return status;
+        }
+
+        FieldValue typed_value;
+        status = ParseLiteral(
+            schema.GetColumns()[column_index],
+            condition.value,
+            &typed_value
+        );
+        if (!status.ok()) {
+            return status;
+        }
+
+        status = IndexKey::Encode(
+            typed_value,
+            &encoded_key
+        );
+        if (!status.ok()) {
+            return status;
+        }
+
+        indexed_condition =
+            static_cast<int>(index);
+        break;
+    }
+
+    if (indexed_condition >= 0) {
+        const Condition& condition =
+            select_statement.conditions[
+                static_cast<std::size_t>(
+                    indexed_condition
+                )
+            ];
+
+        HashIndex* index = catalog_->GetIndex(
+            select_statement.table_name,
+            condition.column
+        );
+
+        if (index == nullptr) {
+            return Status::IOError(
+                "Catalog index metadata has no open index"
+            );
+        }
+
+        current_plan =
+            std::make_unique<IndexScanOperator>(
+                index,
+                std::move(heap_file),
+                encoded_key,
+                stats
+            );
+    } else {
+        current_plan =
+            std::make_unique<SeqScanOperator>(
+                std::move(heap_file),
+                stats
+            );
+    }
+
+    // Se conservan todos los filtros, incluso el usado por el índice.
+    // Esto protege contra entradas obsoletas después de futuras
+    // actualizaciones o eliminaciones.
+    for (const Condition& condition :
+         select_statement.conditions) {
+        current_plan =
+            std::make_unique<FilterOperator>(
+                std::move(current_plan),
+                schema,
+                condition
+            );
+    }
+
+    if (!select_statement.fields.empty() &&
+        select_statement.fields.front() != "*") {
+        std::vector<uint32_t> column_indices;
+
+        for (const std::string& field_name :
+             select_statement.fields) {
+            uint32_t column_index = 0;
+            status = FindColumn(
+                schema,
+                field_name,
+                &column_index
+            );
+
+            if (!status.ok()) {
+                return status;
+            }
+
+            column_indices.push_back(
+                column_index
+            );
+        }
+
+        current_plan =
+            std::make_unique<ProjectionOperator>(
+                std::move(current_plan),
+                schema,
+                std::move(column_indices)
+            );
+    }
+
+    *plan = std::move(current_plan);
+    return Status::OK();
+}
 
 } // namespace minidbms

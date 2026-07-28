@@ -112,3 +112,37 @@ enlazan mediante `OverflowPageId`.
 La función Hash persistente es FNV-1a de 64 bits. No se utiliza
 `std::hash<std::string>` porque su representación persistente no forma parte del
 contrato del estándar de C++.
+
+---
+
+## 5. Catálogo persistente en la página 0
+
+La página física `PageId = 0` ya no es una página vacía. Contiene el catálogo
+persistente del archivo:
+
+```text
++------------------------------------------------------------------+
+| Magic "CAT1" | Version | TableCount | IndexCount | UsedBytes     |
++------------------------------------------------------------------+
+| Table entry 0                                                  ...|
+| Table entry 1                                                  ...|
+| Index entry 0                                                  ...|
++------------------------------------------------------------------+
+```
+
+Cada entrada de tabla guarda:
+
+- nombre de tabla;
+- `first_page_id` del `HeapFile`;
+- cantidad de columnas;
+- nombre, tipo y longitud declarada de cada columna.
+
+Cada entrada de índice guarda:
+
+- nombre del índice;
+- tabla;
+- columna;
+- `header_page_id` del índice Hash persistente.
+
+El catálogo actual ocupa una sola página de 4096 bytes. Cuando los metadatos no
+caben, la operación devuelve `OUT_OF_MEMORY` en lugar de sobrescribir datos.

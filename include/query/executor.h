@@ -14,16 +14,27 @@ namespace minidbms {
 
 class QueryExecutor {
 public:
-    QueryExecutor(CatalogManager* catalog, BufferPoolManager* bpm)
-        : catalog_(catalog), bpm_(bpm) {}
+    QueryExecutor(
+        CatalogManager* catalog,
+        BufferPoolManager* bpm
+    )
+        : catalog_(catalog),
+          bpm_(bpm) {}
 
-    Status Execute(const SQLStatement& stmt, QueryStats* stats);
+    Status Execute(
+        const SQLStatement& statement,
+        QueryStats* stats
+    );
 
 private:
     Status BuildPlan(
-        const SelectStatement& select_stmt,
+        const SelectStatement& select_statement,
         QueryStats* stats,
         std::unique_ptr<AbstractOperator>* plan
+    );
+
+    Status ExecuteCreateIndex(
+        const CreateIndexStatement& statement
     );
 
     CatalogManager* catalog_;

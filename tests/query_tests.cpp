@@ -137,6 +137,59 @@ void TestParserSelectQuery() {
     assert(select_statement->conditions[0].value == "10");
 }
 
+void TestParserCreateIndexCaseInsensitive() {
+    Tokenizer tokenizer(
+        "create index idx_students_id on students (id);"
+    );
+    Parser parser(tokenizer.Tokenize());
+
+    std::unique_ptr<SQLStatement> statement;
+    Status status = parser.Parse(&statement);
+
+    assert(status.ok());
+    assert(statement != nullptr);
+    assert(
+        statement->GetType() ==
+        StatementType::CREATE_INDEX
+    );
+
+    const auto* create_statement =
+        dynamic_cast<CreateIndexStatement*>(
+            statement.get()
+        );
+
+    assert(create_statement != nullptr);
+    assert(create_statement->index_name == "idx_students_id");
+    assert(create_statement->table_name == "students");
+    assert(create_statement->column_name == "id");
+}
+
+void TestParserInsertSyntax() {
+    Tokenizer tokenizer(
+        "INSERT INTO students VALUES (10, 'Ana', true);"
+    );
+    Parser parser(tokenizer.Tokenize());
+
+    std::unique_ptr<SQLStatement> statement;
+    Status status = parser.Parse(&statement);
+
+    assert(status.ok());
+    assert(statement != nullptr);
+    assert(statement->GetType() == StatementType::INSERT);
+
+    const auto* insert_statement =
+        dynamic_cast<InsertStatement*>(
+            statement.get()
+        );
+
+    assert(insert_statement != nullptr);
+    assert(insert_statement->table_name == "students");
+    assert(insert_statement->values.size() == 3);
+    assert(insert_statement->values[0] == "10");
+    assert(insert_statement->values[1] == "Ana");
+    assert(insert_statement->values[2] == "true");
+}
+
 void TestRecordCodec() {
     const Schema schema = BuildSchema();
     Record record = BuildRecord(schema, 25, "Alice", true, 0);
@@ -204,6 +257,8 @@ int main() {
     RUN_TEST(TestTokenizerBasicSelect);
     RUN_TEST(TestTokenizerStringLiteral);
     RUN_TEST(TestParserSelectQuery);
+    RUN_TEST(TestParserCreateIndexCaseInsensitive);
+    RUN_TEST(TestParserInsertSyntax);
     RUN_TEST(TestRecordCodec);
     RUN_TEST(TestVolcanoFilterAndProjection);
 
