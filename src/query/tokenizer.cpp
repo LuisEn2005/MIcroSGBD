@@ -2,11 +2,16 @@
 
 #include <algorithm>
 #include <cctype>
+#include <string>
 
 namespace minidbms {
 
 char Tokenizer::Peek() const {
     return cursor_ < sql_.size() ? sql_[cursor_] : '\0';
+}
+
+char Tokenizer::PeekNext() const {
+    return cursor_ + 1 < sql_.size() ? sql_[cursor_ + 1] : '\0';
 }
 
 char Tokenizer::Get() {
@@ -86,13 +91,31 @@ std::vector<Token> Tokenizer::Tokenize() {
         if (character == '\'' || character == '"') {
             const char quote = Get();
             std::string value;
+            bool terminated = false;
 
-            while (cursor_ < sql_.size() && Peek() != quote) {
+            while (cursor_ < sql_.size()) {
+                if (Peek() == quote) {
+                    if (PeekNext() == quote) {
+                        Get();
+                        Get();
+                        value += quote;
+                        continue;
+                    }
+
+                    Get();
+                    terminated = true;
+                    break;
+                }
+
                 value += Get();
             }
 
-            if (Peek() == quote) {
-                Get();
+            if (!terminated) {
+                tokens.push_back({
+                    TokenType::INVALID,
+                    "Unterminated string literal"
+                });
+                break;
             }
 
             tokens.push_back({TokenType::STRING_LITERAL, value});
@@ -149,6 +172,10 @@ std::vector<Token> Tokenizer::Tokenize() {
                 tokens.push_back({TokenType::KEYWORD_EXPLAIN, word});
             } else if (upper_word == "ANALYZE") {
                 tokens.push_back({TokenType::KEYWORD_ANALYZE, word});
+            } else if (upper_word == "AND") {
+                tokens.push_back({TokenType::KEYWORD_AND, word});
+            } else if (upper_word == "NULL") {
+                tokens.push_back({TokenType::KEYWORD_NULL, word});
             } else {
                 tokens.push_back({TokenType::IDENTIFIER, word});
             }
@@ -156,8 +183,14 @@ std::vector<Token> Tokenizer::Tokenize() {
             continue;
         }
 
-        if (std::isdigit(static_cast<unsigned char>(character))) {
+        if (std::isdigit(static_cast<unsigned char>(character)) ||
+            (character == '-' &&
+             std::isdigit(static_cast<unsigned char>(PeekNext())))) {
             std::string number;
+
+            if (Peek() == '-') {
+                number += Get();
+            }
 
             while (cursor_ < sql_.size() &&
                    std::isdigit(static_cast<unsigned char>(Peek()))) {
@@ -168,7 +201,11 @@ std::vector<Token> Tokenizer::Tokenize() {
             continue;
         }
 
+        std::string error = "Unexpected character: ";
+        error += character;
         Get();
+        tokens.push_back({TokenType::INVALID, error});
+        break;
     }
 
     tokens.push_back({TokenType::END_OF_FILE, ""});
