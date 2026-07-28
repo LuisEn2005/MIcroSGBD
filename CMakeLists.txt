@@ -96,3 +96,4 @@ add_minidb_test(integration_tests tests/integration_tests.cpp)
 add_minidb_test(sprint3_acceptance_test tests/sprint3_acceptance_test.cpp)
 
 add_minidb_test(sprint4_storage_tests tests/sprint4_storage_tests.cpp)
+add_minidb_test(sprint4_metrics_tests tests/sprint4_metrics_tests.cpp)
