@@ -48,3 +48,38 @@ SELECT * FROM usuarios WHERE id = 100;
 ```
 
 Los predicados de rango continúan utilizando `SeqScanOperator`.
+
+## Sprint 4: mutaciones consistentes de tablas
+
+Las operaciones de modificación pasan por `TableStorage`:
+
+```text
+INSERT / UPDATE / DELETE
+          |
+          v
+     TableStorage
+       /      \
+      v        v
+  HeapFile   HashIndex
+      \        /
+       v      v
+   BufferPoolManager
+          |
+          v
+     DiskManager
+```
+
+`TableStorage` valida el esquema, serializa mediante `RecordCodec`, comprueba que
+el `RecordID` pertenezca al `HeapFile` de la tabla y mantiene todas las entradas
+de índice asociadas.
+
+### Orden de las mutaciones
+
+- `INSERT`: valida y codifica claves, inserta en HeapFile y luego en índices.
+  Si un índice falla, elimina las entradas ya insertadas y borra el registro.
+- `DELETE`: elimina primero las entradas de índice y después el registro. Si el
+  borrado físico falla, restaura las entradas del índice.
+- `UPDATE`: lee el registro anterior, calcula claves antiguas y nuevas, conserva
+  el mismo RID y modifica únicamente los índices cuyas claves cambiaron. Ante
+  un fallo intenta restaurar tanto los índices como el registro anterior.
+- Los valores `NULL` no se insertan en el índice Hash.

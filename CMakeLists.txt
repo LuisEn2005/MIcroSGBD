@@ -18,6 +18,7 @@ set(MINI_SGBD_SOURCES
     src/storage/slotted_page.cpp
     src/storage/heap_file.cpp
     src/storage/record_codec.cpp
+    src/storage/table_storage.cpp
 
     src/index/hash_index_header_page.cpp
     src/index/bucket_page.cpp
@@ -93,3 +94,5 @@ add_minidb_test(buffer_tests tests/buffer_tests.cpp)
 add_minidb_test(query_tests tests/query_tests.cpp)
 add_minidb_test(integration_tests tests/integration_tests.cpp)
 add_minidb_test(sprint3_acceptance_test tests/sprint3_acceptance_test.cpp)
+
+add_minidb_test(sprint4_storage_tests tests/sprint4_storage_tests.cpp)
