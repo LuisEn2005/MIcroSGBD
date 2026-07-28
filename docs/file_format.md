@@ -69,3 +69,46 @@ struct RecordID {
     SlotId slot_id;  // Índice en el Directorio de Slots de dicha página
 };
 ```
+
+
+
+---
+
+## 4. Formato del índice Hash persistente
+
+El índice Hash utiliza páginas del mismo archivo binario y todas sus lecturas y
+escrituras pasan por el `BufferPoolManager`.
+
+### Header Page del índice
+
+```text
++------------------------------------------------------------------+
+| Magic (4B) | Version (2B) | BucketCount (2B) | MaxKeyLen (2B)    |
+| Reserved (6B)                                                   |
++------------------------------------------------------------------+
+| Directory: PageId bucket[0], bucket[1], ...                     |
++------------------------------------------------------------------+
+```
+
+Los buckets se asignan de forma perezosa. Una entrada del directorio vale
+`INVALID_PAGE_ID` hasta que se inserta la primera clave que corresponde a ese
+bucket.
+
+### Bucket Page y Overflow Page
+
+```text
++------------------------------------------------------------------+
+| Magic (4B) | EntryCount (2B) | Capacity (2B)                    |
+| OverflowPageId (4B) | Reserved (4B)                              |
++------------------------------------------------------------------+
+| Entry 0 | Entry 1 | ... | Entry N                               |
++------------------------------------------------------------------+
+```
+
+Cada entrada contiene una clave de hasta 64 bytes y un `RecordID`. Las páginas
+de desbordamiento utilizan el mismo formato físico que las páginas bucket y se
+enlazan mediante `OverflowPageId`.
+
+La función Hash persistente es FNV-1a de 64 bits. No se utiliza
+`std::hash<std::string>` porque su representación persistente no forma parte del
+contrato del estándar de C++.
