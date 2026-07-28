@@ -5,6 +5,7 @@
 #include "index/hash_index_header_page.h"
 #include "index/index_key.h"
 #include "storage/disk_manager.h"
+#include "storage/slotted_page.h"
 
 #include <algorithm>
 #include <cassert>
@@ -296,6 +297,77 @@ int main() {
         assert(stats.disk_writes == bpm.GetDiskWrites());
 
         std::cout << "Sprint 3 Integrante 2: Index Buffer Pool I/O Metrics & Flush tests PASSED.\n";
+    }
+
+    // ============================================================
+    // Fase 4 (Sprint 3 - Integrante 2): Comparación I/O (SeqScan vs HashIndex)
+    // ============================================================
+    {
+        const std::filesystem::path compare_db =
+            data_directory / "hash_index_vs_seqscan_test.db";
+        std::filesystem::remove(compare_db);
+
+        DiskManager disk_manager(compare_db.string());
+        ClockReplacer replacer(10);
+        BufferPoolManager bpm(10, &disk_manager, &replacer);
+
+        PageId first_data_page = INVALID_PAGE_ID;
+        Page* page = bpm.NewPage(&first_data_page);
+        assert(page != nullptr);
+        SlottedPage slotted(page);
+        slotted.Init();
+
+        std::vector<RecordID> rids;
+        PageId current_pid = first_data_page;
+        SlottedPage current_slotted(page);
+
+        for (int i = 0; i < 50; ++i) {
+            std::string rec_data = "record_value_" + std::to_string(i);
+            SlotId slot_id = 0;
+            Status st = current_slotted.InsertRecord(rec_data.c_str(), rec_data.size() + 1, &slot_id);
+            if (!st.ok()) {
+                bpm.UnpinPage(current_pid, true);
+                Page* new_p = bpm.NewPage(&current_pid);
+                assert(new_p != nullptr);
+                current_slotted = SlottedPage(new_p);
+                current_slotted.Init();
+                st = current_slotted.InsertRecord(rec_data.c_str(), rec_data.size() + 1, &slot_id);
+                assert(st.ok());
+            }
+            rids.push_back({current_pid, slot_id});
+        }
+        bpm.UnpinPage(current_pid, true);
+        bpm.FlushAllPages();
+
+        PageId index_header_id = INVALID_PAGE_ID;
+        std::unique_ptr<HashIndex> index;
+        assert(HashIndex::Create(&bpm, 4, &index, &index_header_id).ok());
+
+        for (int i = 0; i < 50; ++i) {
+            assert(index->Insert("key_" + std::to_string(i), rids[i]).ok());
+        }
+        bpm.FlushAllPages();
+
+        bpm.ResetStats();
+        std::vector<RecordID> index_found_rids;
+        assert(index->GetValue("key_25", &index_found_rids).ok());
+        assert(!index_found_rids.empty());
+        uint64_t index_disk_reads = bpm.GetDiskReads();
+
+        bpm.ResetStats();
+        uint64_t seq_scan_pages = 0;
+        for (PageId pid = first_data_page; pid <= current_pid; ++pid) {
+            Page* p = bpm.FetchPage(pid);
+            if (p != nullptr) {
+                seq_scan_pages++;
+                bpm.UnpinPage(pid, false);
+            }
+        }
+        uint64_t seq_scan_disk_reads = bpm.GetDiskReads();
+
+        assert(index_disk_reads <= seq_scan_disk_reads);
+        std::cout << "Sprint 3 Integrante 2: Comparison Test (SeqScan vs HashIndex I/O) PASSED.\n"
+                  << "Index lookup reads: " << index_disk_reads << " vs SeqScan reads: " << seq_scan_disk_reads << "\n";
     }
 
     return 0;
