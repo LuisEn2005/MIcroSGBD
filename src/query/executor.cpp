@@ -162,7 +162,7 @@ Status QueryExecutor::Execute(
         return catalog_status;
     }
 
-    bpm_->ResetStats();
+    const auto before_snapshot = bpm_->GetStatsSnapshot();
     const auto start_time =
         std::chrono::steady_clock::now();
 
@@ -248,17 +248,15 @@ Status QueryExecutor::Execute(
             break;
     }
 
-    active_stats->buffer_hits =
-        bpm_->GetBufferHits();
-    active_stats->buffer_misses =
-        bpm_->GetBufferMisses();
-    active_stats->disk_reads =
-        bpm_->GetDiskReads();
-    active_stats->disk_writes =
-        bpm_->GetDiskWrites();
-
     const auto end_time =
         std::chrono::steady_clock::now();
+    const auto after_snapshot = bpm_->GetStatsSnapshot();
+
+    BufferPoolManager::PopulateDeltaStats(
+        before_snapshot,
+        after_snapshot,
+        active_stats
+    );
 
     active_stats->execution_time_ms =
         std::chrono::duration<double, std::milli>(
@@ -497,6 +495,10 @@ Status QueryExecutor::BuildPlan(
             );
         }
 
+        if (stats != nullptr) {
+            stats->scan_type = ScanType::HASH_INDEX;
+        }
+
         current_plan =
             std::make_unique<IndexScanOperator>(
                 index,
@@ -505,6 +507,10 @@ Status QueryExecutor::BuildPlan(
                 stats
             );
     } else {
+        if (stats != nullptr) {
+            stats->scan_type = ScanType::SEQUENTIAL;
+        }
+
         current_plan =
             std::make_unique<SeqScanOperator>(
                 std::move(heap_file),

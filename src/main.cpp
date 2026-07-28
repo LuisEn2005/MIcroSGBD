@@ -78,18 +78,25 @@ int main() {
         }
 
         std::cout
-            << "-> Consulta ejecutada correctamente.\n"
-            << "   Filas examinadas: "
-            << stats.records_examined
-            << " | Filas devueltas: "
-            << stats.rows_returned
-            << " | Paginas: "
-            << stats.pages_scanned
-            << " | Lecturas: "
-            << stats.disk_reads
-            << " | Tiempo: "
+            << "-> Plan: "
+            << ScanTypeToString(stats.scan_type)
+            << "\n   Execution time: "
             << stats.execution_time_ms
-            << " ms\n\n";
+            << " ms\n   Disk reads: "
+            << stats.disk_reads
+            << "\n   Disk writes: "
+            << stats.disk_writes
+            << "\n   Buffer hits: "
+            << stats.buffer_hits
+            << "\n   Buffer misses: "
+            << stats.buffer_misses
+            << "\n   Pages scanned: "
+            << stats.pages_scanned
+            << "\n   Records examined: "
+            << stats.records_examined
+            << "\n   Rows returned: "
+            << stats.rows_returned
+            << "\n\n";
     }
 
     return 0;
