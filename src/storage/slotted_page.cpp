@@ -10,9 +10,10 @@ namespace {
 constexpr std::size_t PAGE_ID_OFFSET = 0;
 constexpr std::size_t SLOT_COUNT_OFFSET = 4;
 constexpr std::size_t FREE_SPACE_POINTER_OFFSET = 6;
-constexpr std::size_t LSN_OFFSET = 8;
+constexpr std::size_t NEXT_PAGE_ID_OFFSET = 8;
+constexpr std::size_t LSN_OFFSET = 12;
 
-constexpr std::size_t PAGE_HEADER_SIZE = 12;
+constexpr std::size_t PAGE_HEADER_SIZE = 16;
 constexpr std::size_t SLOT_ENTRY_SIZE = 4;
 
 template <typename T>
@@ -23,11 +24,7 @@ T ReadValue(const char* data, std::size_t offset) {
 }
 
 template <typename T>
-void WriteValue(
-    char* data,
-    std::size_t offset,
-    const T& value
-) {
+void WriteValue(char* data, std::size_t offset, const T& value) {
     std::memcpy(data + offset, &value, sizeof(T));
 }
 
@@ -36,20 +33,11 @@ std::size_t GetSlotOffset(SlotId slot_id) {
            static_cast<std::size_t>(slot_id) * SLOT_ENTRY_SIZE;
 }
 
-uint16_t ReadSlotRecordOffset(
-    const char* page_data,
-    SlotId slot_id
-) {
-    return ReadValue<uint16_t>(
-        page_data,
-        GetSlotOffset(slot_id)
-    );
+uint16_t ReadSlotRecordOffset(const char* page_data, SlotId slot_id) {
+    return ReadValue<uint16_t>(page_data, GetSlotOffset(slot_id));
 }
 
-uint16_t ReadSlotRecordLength(
-    const char* page_data,
-    SlotId slot_id
-) {
+uint16_t ReadSlotRecordLength(const char* page_data, SlotId slot_id) {
     return ReadValue<uint16_t>(
         page_data,
         GetSlotOffset(slot_id) + sizeof(uint16_t)
@@ -64,12 +52,7 @@ void WriteSlot(
 ) {
     const std::size_t slot_offset = GetSlotOffset(slot_id);
 
-    WriteValue<uint16_t>(
-        page_data,
-        slot_offset,
-        record_offset
-    );
-
+    WriteValue<uint16_t>(page_data, slot_offset, record_offset);
     WriteValue<uint16_t>(
         page_data,
         slot_offset + sizeof(uint16_t),
@@ -79,75 +62,127 @@ void WriteSlot(
 
 } // namespace
 
-void SlottedPage::Init() {
-    char* page_data = page_->GetData();
+Status SlottedPage::Init() {
+    if (page_ == nullptr) {
+        return Status(
+            StatusCode::INVALID_ARGUMENT,
+            "Page cannot be null"
+        );
+    }
 
+    if (page_->GetPageId() == INVALID_PAGE_ID) {
+        return Status(
+            StatusCode::INVALID_ARGUMENT,
+            "Page must have a valid PageId"
+        );
+    }
+
+    char* page_data = page_->GetData();
     std::memset(page_data, 0, PAGE_SIZE);
 
     const PageId page_id = page_->GetPageId();
     const uint16_t slot_count = 0;
-    const uint16_t free_space_pointer =
-        static_cast<uint16_t>(PAGE_SIZE);
+    const uint16_t free_space_pointer = static_cast<uint16_t>(PAGE_SIZE);
+    const PageId next_page_id = INVALID_PAGE_ID;
     const uint32_t lsn = 0;
 
-    WriteValue<PageId>(
-        page_data,
-        PAGE_ID_OFFSET,
-        page_id
-    );
-
-    WriteValue<uint16_t>(
-        page_data,
-        SLOT_COUNT_OFFSET,
-        slot_count
-    );
-
+    WriteValue<PageId>(page_data, PAGE_ID_OFFSET, page_id);
+    WriteValue<uint16_t>(page_data, SLOT_COUNT_OFFSET, slot_count);
     WriteValue<uint16_t>(
         page_data,
         FREE_SPACE_POINTER_OFFSET,
         free_space_pointer
     );
-
-    WriteValue<uint32_t>(
-        page_data,
-        LSN_OFFSET,
-        lsn
-    );
+    WriteValue<PageId>(page_data, NEXT_PAGE_ID_OFFSET, next_page_id);
+    WriteValue<uint32_t>(page_data, LSN_OFFSET, lsn);
 
     page_->SetDirty(true);
+    return Status::OK();
 }
 
-uint16_t SlottedPage::GetFreeSpace() const {
+bool SlottedPage::IsInitialized() const {
+    if (page_ == nullptr || page_->GetPageId() == INVALID_PAGE_ID) {
+        return false;
+    }
+
     const char* page_data = page_->GetData();
-
+    const PageId stored_page_id =
+        ReadValue<PageId>(page_data, PAGE_ID_OFFSET);
     const uint16_t slot_count =
-        ReadValue<uint16_t>(
-            page_data,
-            SLOT_COUNT_OFFSET
-        );
-
+        ReadValue<uint16_t>(page_data, SLOT_COUNT_OFFSET);
     const uint16_t free_space_pointer =
-        ReadValue<uint16_t>(
-            page_data,
-            FREE_SPACE_POINTER_OFFSET
-        );
+        ReadValue<uint16_t>(page_data, FREE_SPACE_POINTER_OFFSET);
 
     const std::size_t directory_end =
         PAGE_HEADER_SIZE +
-        static_cast<std::size_t>(slot_count) *
-            SLOT_ENTRY_SIZE;
+        static_cast<std::size_t>(slot_count) * SLOT_ENTRY_SIZE;
 
-    if (free_space_pointer > PAGE_SIZE) {
+    return stored_page_id == page_->GetPageId() &&
+           free_space_pointer >= directory_end &&
+           free_space_pointer <= PAGE_SIZE;
+}
+
+uint16_t SlottedPage::GetFreeSpace() const {
+    if (!IsInitialized()) {
         return 0;
     }
 
-    if (free_space_pointer < directory_end) {
+    const char* page_data = page_->GetData();
+    const uint16_t slot_count = GetSlotCount();
+    const uint16_t free_space_pointer =
+        ReadValue<uint16_t>(page_data, FREE_SPACE_POINTER_OFFSET);
+
+    const std::size_t directory_end =
+        PAGE_HEADER_SIZE +
+        static_cast<std::size_t>(slot_count) * SLOT_ENTRY_SIZE;
+
+    return static_cast<uint16_t>(free_space_pointer - directory_end);
+}
+
+uint16_t SlottedPage::GetSlotCount() const {
+    if (page_ == nullptr) {
         return 0;
     }
 
-    return static_cast<uint16_t>(
-        free_space_pointer - directory_end
+    return ReadValue<uint16_t>(
+        page_->GetData(),
+        SLOT_COUNT_OFFSET
     );
+}
+
+PageId SlottedPage::GetNextPageId() const {
+    if (!IsInitialized()) {
+        return INVALID_PAGE_ID;
+    }
+
+    return ReadValue<PageId>(
+        page_->GetData(),
+        NEXT_PAGE_ID_OFFSET
+    );
+}
+
+Status SlottedPage::SetNextPageId(PageId next_page_id) {
+    if (!IsInitialized()) {
+        return Status(
+            StatusCode::INVALID_ARGUMENT,
+            "Slotted page is not initialized"
+        );
+    }
+
+    if (next_page_id < INVALID_PAGE_ID) {
+        return Status(
+            StatusCode::INVALID_ARGUMENT,
+            "Invalid next page id"
+        );
+    }
+
+    WriteValue<PageId>(
+        page_->GetData(),
+        NEXT_PAGE_ID_OFFSET,
+        next_page_id
+    );
+    page_->SetDirty(true);
+    return Status::OK();
 }
 
 Status SlottedPage::InsertRecord(
@@ -155,6 +190,20 @@ Status SlottedPage::InsertRecord(
     uint32_t size,
     SlotId* slot_id
 ) {
+    if (page_ == nullptr) {
+        return Status(
+            StatusCode::INVALID_ARGUMENT,
+            "Page cannot be null"
+        );
+    }
+
+    if (!IsInitialized()) {
+        return Status(
+            StatusCode::INVALID_ARGUMENT,
+            "Slotted page is not initialized"
+        );
+    }
+
     if (data == nullptr) {
         return Status(
             StatusCode::INVALID_ARGUMENT,
@@ -183,26 +232,10 @@ Status SlottedPage::InsertRecord(
         );
     }
 
-    if (page_->GetPageId() == INVALID_PAGE_ID) {
-        return Status(
-            StatusCode::INVALID_ARGUMENT,
-            "Page must have a valid PageId"
-        );
-    }
-
     char* page_data = page_->GetData();
-
-    uint16_t slot_count =
-        ReadValue<uint16_t>(
-            page_data,
-            SLOT_COUNT_OFFSET
-        );
-
+    uint16_t slot_count = GetSlotCount();
     uint16_t free_space_pointer =
-        ReadValue<uint16_t>(
-            page_data,
-            FREE_SPACE_POINTER_OFFSET
-        );
+        ReadValue<uint16_t>(page_data, FREE_SPACE_POINTER_OFFSET);
 
     SlotId selected_slot = slot_count;
     bool reusing_slot = false;
@@ -210,18 +243,10 @@ Status SlottedPage::InsertRecord(
     for (SlotId current_slot = 0;
          current_slot < slot_count;
          ++current_slot) {
-
         const uint16_t current_offset =
-            ReadSlotRecordOffset(
-                page_data,
-                current_slot
-            );
-
+            ReadSlotRecordOffset(page_data, current_slot);
         const uint16_t current_length =
-            ReadSlotRecordLength(
-                page_data,
-                current_slot
-            );
+            ReadSlotRecordLength(page_data, current_slot);
 
         if (current_offset == 0 && current_length == 0) {
             selected_slot = current_slot;
@@ -241,15 +266,9 @@ Status SlottedPage::InsertRecord(
     }
 
     const uint16_t record_offset =
-        static_cast<uint16_t>(
-            free_space_pointer - size
-        );
+        static_cast<uint16_t>(free_space_pointer - size);
 
-    std::memcpy(
-        page_data + record_offset,
-        data,
-        size
-    );
+    std::memcpy(page_data + record_offset, data, size);
 
     WriteSlot(
         page_data,
@@ -260,7 +279,6 @@ Status SlottedPage::InsertRecord(
 
     if (!reusing_slot) {
         ++slot_count;
-
         WriteValue<uint16_t>(
             page_data,
             SLOT_COUNT_OFFSET,
@@ -275,7 +293,6 @@ Status SlottedPage::InsertRecord(
     );
 
     page_->SetDirty(true);
-
     *slot_id = selected_slot;
 
     return Status::OK();
@@ -285,6 +302,20 @@ Status SlottedPage::ReadRecord(
     SlotId slot_id,
     Record* record
 ) const {
+    if (page_ == nullptr) {
+        return Status(
+            StatusCode::INVALID_ARGUMENT,
+            "Page cannot be null"
+        );
+    }
+
+    if (!IsInitialized()) {
+        return Status(
+            StatusCode::INVALID_ARGUMENT,
+            "Slotted page is not initialized"
+        );
+    }
+
     if (record == nullptr) {
         return Status(
             StatusCode::INVALID_ARGUMENT,
@@ -293,30 +324,16 @@ Status SlottedPage::ReadRecord(
     }
 
     const char* page_data = page_->GetData();
-
-    const uint16_t slot_count =
-        ReadValue<uint16_t>(
-            page_data,
-            SLOT_COUNT_OFFSET
-        );
+    const uint16_t slot_count = GetSlotCount();
 
     if (slot_id >= slot_count) {
-        return Status::NotFound(
-            "Slot does not exist"
-        );
+        return Status::NotFound("Slot does not exist");
     }
 
     const uint16_t record_offset =
-        ReadSlotRecordOffset(
-            page_data,
-            slot_id
-        );
-
+        ReadSlotRecordOffset(page_data, slot_id);
     const uint16_t record_length =
-        ReadSlotRecordLength(
-            page_data,
-            slot_id
-        );
+        ReadSlotRecordLength(page_data, slot_id);
 
     if (record_offset == 0 && record_length == 0) {
         return Status::NotFound(
@@ -326,30 +343,16 @@ Status SlottedPage::ReadRecord(
 
     const std::size_t directory_end =
         PAGE_HEADER_SIZE +
-        static_cast<std::size_t>(slot_count) *
-            SLOT_ENTRY_SIZE;
-
+        static_cast<std::size_t>(slot_count) * SLOT_ENTRY_SIZE;
     const std::size_t record_end =
-        static_cast<std::size_t>(record_offset) +
-        record_length;
+        static_cast<std::size_t>(record_offset) + record_length;
 
-    if (record_offset < directory_end ||
-        record_end > PAGE_SIZE) {
-
-        return Status::IOError(
-            "Corrupted slot entry"
-        );
+    if (record_offset < directory_end || record_end > PAGE_SIZE) {
+        return Status::IOError("Corrupted slot entry");
     }
 
-    record->SetRecordID({
-        page_->GetPageId(),
-        slot_id
-    });
-
-    record->SetData(
-        page_data + record_offset,
-        record_length
-    );
+    record->SetRecordID({page_->GetPageId(), slot_id});
+    record->SetData(page_data + record_offset, record_length);
 
     return Status::OK();
 }
@@ -365,7 +368,7 @@ Status SlottedPage::UpdateRecord(
 
     return Status(
         StatusCode::INVALID_ARGUMENT,
-        "UpdateRecord is not implemented in Sprint 1"
+        "UpdateRecord is not implemented yet"
     );
 }
 
@@ -374,7 +377,7 @@ Status SlottedPage::DeleteRecord(SlotId slot_id) {
 
     return Status(
         StatusCode::INVALID_ARGUMENT,
-        "DeleteRecord is not implemented in Sprint 1"
+        "DeleteRecord is not implemented yet"
     );
 }
 

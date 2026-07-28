@@ -24,8 +24,8 @@ Cada página de datos de $4096\text{ bytes}$ utiliza una arquitectura slotted-pa
 
 ```text
 +-----------------------------------------------------------------------+
-|  Page Header (12 bytes)                                               |
-|  [ PageID (4B) | SlotCount (2B) | FreeSpacePointer (2B) | LSN (4B) ]  |
+|  Page Header (16 bytes)                                               |
+|  [ PageID (4B) | SlotCount (2B) | FreeSpacePointer (2B) | NextPageID (4B) | LSN (4B) ]  |
 +-----------------------------------------------------------------------+
 |  Slot Directory                                                       |
 |  [ Slot 0: Offset(2B), Length(2B) ]                                   |
@@ -42,12 +42,13 @@ Cada página de datos de $4096\text{ bytes}$ utiliza una arquitectura slotted-pa
 +-----------------------------------------------------------------------+
 ```
 
-### Encabezado de Página (12 Bytes)
+### Encabezado de Página (16 Bytes)
 | Campo | Tipo | Tamaño | Descripción |
 | :--- | :--- | :--- | :--- |
 | `page_id` | `int32_t` | 4 bytes | Identificador único de la página en disco. |
 | `slot_count` | `uint16_t` | 2 bytes | Número de slots (activos o eliminados) en el directorio. |
 | `free_space_pointer` | `uint16_t` | 2 bytes | Offset desde el inicio de la página donde empieza el espacio libre para registros. Inicialmente 4096. |
+| `next_page_id` | `int32_t` | 4 bytes | Siguiente página del mismo HeapFile. Vale `INVALID_PAGE_ID` cuando no existe otra página. |
 | `lsn` | `uint32_t` | 4 bytes | Log Sequence Number (reservado para recuperación/concurrencia). |
 
 ### Directorio de Slots (Slot Entry - 4 Bytes cada uno)

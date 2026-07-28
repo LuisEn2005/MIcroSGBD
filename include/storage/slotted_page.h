@@ -1,18 +1,22 @@
 #ifndef MINI_DBMS_SLOTTED_PAGE_H
 #define MINI_DBMS_SLOTTED_PAGE_H
 
-#include "page.h"
-#include "record.h"
-#include "../common/status.h"
+#include "common/status.h"
+#include "common/types.h"
+#include "storage/page.h"
+#include "storage/record.h"
+
+#include <cstdint>
 
 namespace minidbms {
 
 class SlottedPage {
 public:
-    explicit SlottedPage(Page* page)
-        : page_(page) {}
+    explicit SlottedPage(Page* page) : page_(page) {}
 
-    void Init();
+    Status Init();
+
+    bool IsInitialized() const;
 
     Status InsertRecord(
         const char* data,
@@ -34,6 +38,10 @@ public:
     Status DeleteRecord(SlotId slot_id);
 
     uint16_t GetFreeSpace() const;
+    uint16_t GetSlotCount() const;
+
+    PageId GetNextPageId() const;
+    Status SetNextPageId(PageId next_page_id);
 
 private:
     Page* page_;

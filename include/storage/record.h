@@ -9,7 +9,7 @@ namespace minidbms {
   class Record {
     public:
       Record() = default;
-      Record(RecordID rid, uint32_t size, char* data)
+      Record(RecordID rid, uint32_t size, const char* data)
         : rid_(rid), size_(size), data_(data, data + size) {}
 
       RecordID GetRecordID() const { return rid_; }
