@@ -6,3 +6,8 @@ mini-sgbd
 data/*.db
 data/*.idx
 results/*.csv
+
+# Directorios de compilación
+build-san/
+build-debug/
+build-release/
