@@ -17,6 +17,7 @@ set(MINI_SGBD_SOURCES
     src/storage/page.cpp
     src/storage/slotted_page.cpp
     src/storage/heap_file.cpp
+    src/storage/record_codec.cpp
 
     src/buffer/clock_replacer.cpp
     src/buffer/buffer_pool_manager.cpp
@@ -26,6 +27,9 @@ set(MINI_SGBD_SOURCES
     src/query/tokenizer.cpp
     src/query/parser.cpp
     src/query/executor.cpp
+    src/query/operators/seq_scan_operator.cpp
+    src/query/operators/filter_operator.cpp
+    src/query/operators/projection_operator.cpp
 )
 
 add_library(mini_sgbd_core ${MINI_SGBD_SOURCES})
@@ -99,3 +103,5 @@ set_tests_properties(
     PROPERTIES
         WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
 )
+
+

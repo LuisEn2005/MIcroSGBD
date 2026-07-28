@@ -1,125 +1,168 @@
-#include "../../include/query/executor.h"
-#include "../../include/query/operators/seq_scan_operator.h"
-#include "../../include/query/operators/filter_operator.h"
-#include "../../include/query/operators/projection_operator.h"
-#include "../../include/storage/heap_file.h"
+#include "query/executor.h"
+
+#include "query/operators/filter_operator.h"
+#include "query/operators/projection_operator.h"
+#include "query/operators/seq_scan_operator.h"
+#include "storage/heap_file.h"
+
 #include <chrono>
+#include <vector>
 
 namespace minidbms {
 
-Status QueryExecutor::Execute(const SQLStatement& stmt, QueryStats* stats) {
-    if (stats) {
-        stats->Reset();
+Status QueryExecutor::Execute(
+    const SQLStatement& stmt,
+    QueryStats* stats
+) {
+    QueryStats local_stats;
+    QueryStats* active_stats = stats != nullptr ? stats : &local_stats;
+    active_stats->Reset();
+
+    if (catalog_ == nullptr || bpm_ == nullptr) {
+        return Status(
+            StatusCode::INVALID_ARGUMENT,
+            "Executor dependencies cannot be null"
+        );
     }
 
-    auto start_time = std::chrono::high_resolution_clock::now();
+    bpm_->ResetStats();
+    const auto start_time = std::chrono::steady_clock::now();
 
     Status status = Status::OK();
-    
-    if (stmt.GetType() == StatementType::SELECT) {
-        auto* select_stmt = dynamic_cast<const SelectStatement*>(&stmt);
-        if (select_stmt) {
-            auto plan = BuildPlan(*select_stmt);
-            if (!plan) {
-                return Status(StatusCode::INVALID_ARGUMENT, "Error al construir el plan de ejecucion");
+
+    if (stmt.GetType() != StatementType::SELECT) {
+        status = Status(
+            StatusCode::INVALID_ARGUMENT,
+            "Only SELECT is implemented in this sprint"
+        );
+    } else {
+        const auto* select_stmt =
+            dynamic_cast<const SelectStatement*>(&stmt);
+
+        if (select_stmt == nullptr) {
+            status = Status(
+                StatusCode::INVALID_ARGUMENT,
+                "Invalid SELECT statement"
+            );
+        } else {
+            std::unique_ptr<AbstractOperator> plan;
+            status = BuildPlan(*select_stmt, active_stats, &plan);
+
+            if (status.ok()) {
+                status = plan->Open();
             }
 
-            status = plan->Open();
-            
             if (status.ok()) {
                 Record record;
                 RecordID rid;
-                
+
                 while (plan->Next(&record, &rid)) {
-                    if (stats) {
-                        stats->records_examined++;
-                    }
+                    ++active_stats->rows_returned;
                 }
-                
-                plan->Close();
+
+                const Status close_status = plan->Close();
+                if (!close_status.ok()) {
+                    status = close_status;
+                }
             }
         }
     }
 
-    if (stats) {
-        auto end_time = std::chrono::high_resolution_clock::now();
-        auto duration = std::chrono::duration_cast<
-            std::chrono::microseconds
-        >(end_time - start_time);
-        stats->execution_time_ms = duration.count() / 1000.0;
-    }
+    active_stats->buffer_hits = bpm_->GetBufferHits();
+    active_stats->buffer_misses = bpm_->GetBufferMisses();
+    active_stats->disk_reads = bpm_->GetDiskReads();
+    active_stats->disk_writes = bpm_->GetDiskWrites();
+
+    const auto end_time = std::chrono::steady_clock::now();
+    active_stats->execution_time_ms =
+        std::chrono::duration<double, std::milli>(end_time - start_time).count();
 
     return status;
 }
 
-std::unique_ptr<AbstractOperator> QueryExecutor::BuildPlan(
-    const SelectStatement& select_stmt
+Status QueryExecutor::BuildPlan(
+    const SelectStatement& select_stmt,
+    QueryStats* stats,
+    std::unique_ptr<AbstractOperator>* plan
 ) {
+    if (plan == nullptr) {
+        return Status(
+            StatusCode::INVALID_ARGUMENT,
+            "Plan output cannot be null"
+        );
+    }
+
     Schema schema({});
     PageId first_page_id = INVALID_PAGE_ID;
-    
+
     Status status = catalog_->GetTableSchema(
-        select_stmt.table_name, 
+        select_stmt.table_name,
         &schema
     );
-    
     if (!status.ok()) {
-        return nullptr;
+        return status;
     }
-    
+
     status = catalog_->GetTableFirstPageId(
         select_stmt.table_name,
         &first_page_id
     );
-    
     if (!status.ok()) {
-        return nullptr;
+        return status;
     }
 
     auto heap_file = std::make_unique<HeapFile>(
-        bpm_, 
+        bpm_,
         first_page_id
     );
 
-    auto scan = std::make_unique<SeqScanOperator>(
-        heap_file.release()
-    );
+    std::unique_ptr<AbstractOperator> current_plan =
+        std::make_unique<SeqScanOperator>(
+            std::move(heap_file),
+            stats
+        );
 
-    std::unique_ptr<AbstractOperator> plan = std::move(scan);
-
-    if (!select_stmt.conditions.empty()) {
-        for (const auto& condition : select_stmt.conditions) {
-            auto filter = std::make_unique<FilterOperator>(
-                std::move(plan),
-                condition
-            );
-            plan = std::move(filter);
-        }
+    for (const Condition& condition : select_stmt.conditions) {
+        current_plan = std::make_unique<FilterOperator>(
+            std::move(current_plan),
+            schema,
+            condition
+        );
     }
 
-    if (!select_stmt.fields.empty() && select_stmt.fields[0] != "*") {
-        std::vector<uint32_t> col_indices;
+    if (!select_stmt.fields.empty() &&
+        select_stmt.fields.front() != "*") {
+        std::vector<uint32_t> column_indices;
         const auto& columns = schema.GetColumns();
-        
-        for (const auto& field_name : select_stmt.fields) {
-            for (uint32_t i = 0; i < columns.size(); ++i) {
-                if (columns[i].name == field_name) {
-                    col_indices.push_back(i);
+
+        for (const std::string& field_name : select_stmt.fields) {
+            bool found = false;
+
+            for (uint32_t index = 0; index < columns.size(); ++index) {
+                if (columns[index].name == field_name) {
+                    column_indices.push_back(index);
+                    found = true;
                     break;
                 }
             }
+
+            if (!found) {
+                return Status(
+                    StatusCode::INVALID_ARGUMENT,
+                    "Projection column does not exist: " + field_name
+                );
+            }
         }
 
-        if (!col_indices.empty()) {
-            auto projection = std::make_unique<ProjectionOperator>(
-                std::move(plan),
-                col_indices
-            );
-            plan = std::move(projection);
-        }
+        current_plan = std::make_unique<ProjectionOperator>(
+            std::move(current_plan),
+            schema,
+            std::move(column_indices)
+        );
     }
 
-    return plan;
+    *plan = std::move(current_plan);
+    return Status::OK();
 }
 
 } // namespace minidbms

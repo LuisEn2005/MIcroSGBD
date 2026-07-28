@@ -68,6 +68,10 @@ namespace minidbms {
                 cond.op = ">";
             } else if (Match(TokenType::LESS)) {
                 cond.op = "<";
+            } else if (Match(TokenType::GREATER_EQUAL)) {
+                cond.op = ">=";
+            } else if (Match(TokenType::LESS_EQUAL)) {
+                cond.op = "<=";
             } else {
                 return Status(StatusCode::INVALID_ARGUMENT, "Operador no soportado en WHERE");
             }
@@ -108,3 +112,5 @@ namespace minidbms {
     }
 
 } // namespace minidbms
+
+

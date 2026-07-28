@@ -1,54 +1,35 @@
 #ifndef MINI_DBMS_SEQ_SCAN_OPERATOR_H
 #define MINI_DBMS_SEQ_SCAN_OPERATOR_H
 
-#include "abstract_operator.h"
-#include "../../storage/heap_file.h"
+#include "query/operators/abstract_operator.h"
+#include "metrics/query_stats.h"
+#include "storage/heap_file.h"
+
+#include <memory>
 
 namespace minidbms {
-    class SeqScanOperator : public AbstractOperator {
-        public:
-            explicit SeqScanOperator(HeapFile* heap_file) 
-                : heap_file_(heap_file), current_page_id_(INVALID_PAGE_ID), current_slot_id_(0) {}
 
-            Status Open() override {
-                if (heap_file_ != nullptr) {
-                    current_page_id_ = heap_file_->GetFirstPageId();
-                } else {
-                    current_page_id_ = INVALID_PAGE_ID;
-                }
-                current_slot_id_ = 0;
-                return Status::OK();
-            }
+class SeqScanOperator : public AbstractOperator {
+public:
+    SeqScanOperator(
+        std::unique_ptr<HeapFile> heap_file,
+        QueryStats* stats = nullptr
+    );
 
-            bool Next(Record* record, RecordID* rid) override {
-                if (heap_file_ == nullptr || current_page_id_ == INVALID_PAGE_ID) {
-                    return false;
-                }
+    Status Open() override;
+    bool Next(Record* record, RecordID* rid) override;
+    Status Close() override;
 
-                RecordID current_rid{current_page_id_, current_slot_id_};
-                Status status = heap_file_->GetRecord(current_rid, record);
+private:
+    std::unique_ptr<HeapFile> heap_file_;
+    QueryStats* stats_{nullptr};
 
-                if (status.ok()) {
-                    *rid = current_rid;
-                    current_slot_id_++;
-                    return true;
-                }
-
-                current_slot_id_++;
-                return false;
-            }
-
-            Status Close() override {
-                current_page_id_ = INVALID_PAGE_ID;
-                current_slot_id_ = 0;
-                return Status::OK();
-            }
-
-        private:
-            HeapFile* heap_file_;
-            PageId current_page_id_;
-            SlotId current_slot_id_;
-    };
+    bool started_{false};
+    bool finished_{false};
+    PageId last_page_id_{INVALID_PAGE_ID};
+    RecordID current_rid_{};
+    Status scan_status_{};
+};
 
 } // namespace minidbms
 

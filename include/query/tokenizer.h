@@ -26,6 +26,8 @@ namespace minidbms {
         EQUAL,         // =
         GREATER,       // >
         LESS,          // <
+        GREATER_EQUAL, // >=
+        LESS_EQUAL,    // <=
         SEMICOLON,     // ;
         LPAREN,        // (
         RPAREN,        // )
@@ -54,3 +56,5 @@ namespace minidbms {
 }
 
 #endif // MINI_DBMS_TOKENIZER_H
+
+
