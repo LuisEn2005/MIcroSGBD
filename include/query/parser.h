@@ -17,6 +17,7 @@ enum class StatementType {
     UPDATE,
     DELETE,
     EXPLAIN,
+    CREATE_TABLE,
     CREATE_INDEX
 };
 
@@ -24,6 +25,12 @@ struct Condition {
     std::string column;
     std::string op;
     std::string value;
+};
+
+struct ColumnDefinition {
+    std::string name;
+    std::string type_name;
+    uint32_t length{0};
 };
 
 class SQLStatement {
@@ -41,6 +48,7 @@ public:
     std::string table_name;
     std::vector<std::string> fields;
     std::vector<Condition> conditions;
+    bool is_explain{false};
 };
 
 class InsertStatement : public SQLStatement {
@@ -51,6 +59,38 @@ public:
 
     std::string table_name;
     std::vector<std::string> values;
+};
+
+class UpdateStatement : public SQLStatement {
+public:
+    StatementType GetType() const override {
+        return StatementType::UPDATE;
+    }
+
+    std::string table_name;
+    std::string column_name;
+    std::string new_value;
+    std::vector<Condition> conditions;
+};
+
+class DeleteStatement : public SQLStatement {
+public:
+    StatementType GetType() const override {
+        return StatementType::DELETE;
+    }
+
+    std::string table_name;
+    std::vector<Condition> conditions;
+};
+
+class CreateTableStatement : public SQLStatement {
+public:
+    StatementType GetType() const override {
+        return StatementType::CREATE_TABLE;
+    }
+
+    std::string table_name;
+    std::vector<ColumnDefinition> columns;
 };
 
 class CreateIndexStatement : public SQLStatement {
@@ -76,9 +116,13 @@ private:
     Token Advance();
     bool Match(TokenType type);
 
-    Status ParseSelect(std::unique_ptr<SQLStatement>* statement);
+    Status ParseSelect(std::unique_ptr<SQLStatement>* statement, bool is_explain = false);
     Status ParseInsert(std::unique_ptr<SQLStatement>* statement);
+    Status ParseUpdate(std::unique_ptr<SQLStatement>* statement);
+    Status ParseDelete(std::unique_ptr<SQLStatement>* statement);
+    Status ParseCreateTable(std::unique_ptr<SQLStatement>* statement);
     Status ParseCreateIndex(std::unique_ptr<SQLStatement>* statement);
+    Status ParseExplain(std::unique_ptr<SQLStatement>* statement);
     Status ParseCondition(Condition* condition);
     Status FinishStatement();
 

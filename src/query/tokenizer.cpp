@@ -129,6 +129,8 @@ std::vector<Token> Tokenizer::Tokenize() {
                 tokens.push_back({TokenType::KEYWORD_DELETE, word});
             } else if (upper_word == "CREATE") {
                 tokens.push_back({TokenType::KEYWORD_CREATE, word});
+            } else if (upper_word == "TABLE") {
+                tokens.push_back({TokenType::KEYWORD_TABLE, word});
             } else if (upper_word == "INDEX") {
                 tokens.push_back({TokenType::KEYWORD_INDEX, word});
             } else if (upper_word == "ON") {
