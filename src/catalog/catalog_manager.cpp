@@ -931,8 +931,22 @@ Status CatalogManager::CreateIndex(
 
     Status status = Persist();
     if (!status.ok()) {
+        Status cleanup_status = Status::OK();
+        const auto inserted = indexes_.find(key);
+        if (inserted != indexes_.end() && inserted->second.index) {
+            cleanup_status = inserted->second.index->Destroy();
+        }
+
         indexes_.erase(key);
         index_names_.erase(index_name);
+
+        if (!cleanup_status.ok()) {
+            return Status::IOError(
+                "Catalog persistence failed: " + status.message() +
+                "; index cleanup failed: " + cleanup_status.message()
+            );
+        }
+
         return status;
     }
 
@@ -947,6 +961,13 @@ bool CatalogManager::HasIndex(
            indexes_.find(
                MakeIndexKey(table_name, column_name)
            ) != indexes_.end();
+}
+
+bool CatalogManager::HasIndexName(
+    const std::string& index_name
+) const {
+    return initialization_status_.ok() &&
+           index_names_.find(index_name) != index_names_.end();
 }
 
 HashIndex* CatalogManager::GetIndex(

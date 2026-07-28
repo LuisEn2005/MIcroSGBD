@@ -83,3 +83,38 @@ de índice asociadas.
   el mismo RID y modifica únicamente los índices cuyas claves cambiaron. Ante
   un fallo intenta restaurar tanto los índices como el registro anterior.
 - Los valores `NULL` no se insertan en el índice Hash.
+
+## Estabilización posterior al Sprint 5
+
+### Resultados de consulta
+
+`QueryExecutor::Execute()` puede recibir un `QueryResult`. Un `SELECT` normal
+materializa columnas y valores tipados para que la consola muestre filas reales.
+`EXPLAIN ANALYZE` ejecuta el mismo plan, pero muestra las métricas del plan.
+
+### Literales SQL tipados
+
+El parser conserva la clase del literal (`NUMBER`, `STRING`, `IDENTIFIER` o
+`NULL`). `ConvertLiteral()` valida el tipo de la columna antes de construir un
+`FieldValue`; por ejemplo, un entero escrito como `'10'` ya no se convierte de
+forma silenciosa.
+
+### Mutaciones por sentencia
+
+`UPDATE` y `DELETE` primero materializan los `RecordID` candidatos y después
+modifican el almacenamiento. Esto evita alterar la cadena de páginas mientras
+el operador Volcano todavía la está recorriendo. `rows_returned` se reserva
+para `SELECT`; `rows_affected` se usa para `INSERT`, `UPDATE` y `DELETE`.
+
+### Orden de persistencia DDL
+
+Al crear una tabla o índice, sus páginas se escriben antes de publicar los
+metadatos en la página de catálogo. Si la creación falla, se eliminan las
+páginas reservadas para evitar objetos huérfanos.
+
+### Reutilización de páginas
+
+`DiskManager` reconstruye al abrir el archivo una lista de páginas libres a
+partir de páginas completamente vacías. `AllocatePage()` reutiliza primero el
+menor `PageId` libre y solo aumenta el archivo cuando no existe una página
+reutilizable.

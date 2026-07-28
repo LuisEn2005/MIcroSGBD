@@ -1,38 +1,48 @@
-# Metodología Experimental y Resultados de Rendimiento (Sprint 4)
+# Metodología experimental del Sprint 5
 
-Este documento detalla la metodología cuantitativa y los experimentos realizados para evaluar la eficiencia del Mini-SGBD persistente bajo variaciones en el tamaño del Buffer Pool, estado de la caché (fría vs caliente) y tipos de acceso (búsqueda secuencial `SeqScan` vs búsqueda indexada `IndexScan`).
+## Objetivo
 
-## 1. Diseño Experimental
+Comparar `IndexScan` y `SeqScan`, el efecto del tamaño del Buffer Pool y la
+sobrecarga de mantener un índice durante inserciones.
 
-### Factores Evaluados
-1. **Plan de Ejecución**:
-   - `HashIndex` (`IndexScan`): Búsqueda por igualdad sobre clave indexada (`id = X`).
-   - `SeqScan`: Búsqueda secuencial sobre columna no indexada o consulta de rango (`age > 40`).
-2. **Capacidad del Buffer Pool**:
-   - `3 frames`: Forzar reemplazos constantes mediante el algoritmo Clock.
-   - `10 frames`: Configuración equilibrada.
-   - `50 frames`: Capacidad amplia para retener páginas en caché caliente.
-3. **Estado de Caché**:
-   - **Caché Fría (`cold`)**: Reconstrucción limpia del `BufferPoolManager` y `DiskManager` antes de ejecutar la consulta.
-   - **Caché Caliente (`hot`)**: Ejecución consecutiva de la consulta sobre páginas previamente cargadas en el Buffer Pool.
+## Configuración
 
----
+- Volúmenes: 1 000 y 10 000 registros.
+- Buffer Pool: 3, 10 y 50 frames.
+- Diez repeticiones por escenario.
+- Consultas frías: se reconstruyen `DiskManager`, `ClockReplacer` y
+  `BufferPoolManager` antes de cada ejecución.
+- Consultas calientes: una ejecución de calentamiento seguida de repeticiones
+  sobre el mismo Buffer Pool.
 
-## 2. Resultados Obtenidos (Dataset: 10,000 Registros)
+## Comparaciones
 
-Los experimentos fueron ejecutados utilizando la suite automatizada `tests/sprint4_metrics_tests.cpp`, registrando los datos en `results/sprint4_benchmark_results.csv`.
+```sql
+-- Igualdad indexada
+SELECT * FROM users WHERE id = 500;
 
-### Comparación Cuantitativa Resumida (Buffer Pool = 3 Frames)
+-- Igualdad no indexada
+SELECT * FROM users WHERE name = 'User_500';
+```
 
-| Estrategia | Plan | Registros Examinados | Lecturas de Disco | Buffer Hits | Buffer Misses | Tiempo Promedio (ms) |
-| :--- | :---: | :---: | :---: | :---: | :---: | :---: |
-| **Búsqueda por Índice** | `IndexScan` | **1** | **4** | 2 | 4 | **0.16 ms** |
-| **Escaneo Secuencial** | `SeqScan` | **10,000** | **147** | 0 | 147 | **3.85 ms** |
+Se registran media, mediana, mínimo, máximo, desviación estándar, lecturas,
+escrituras, hits, misses, páginas y registros examinados.
 
----
+## Inserción con y sin índice
 
-## 3. Conclusiones Clave
+Para la variante indexada se crea primero un índice vacío y luego cada
+`INSERT` pasa por `TableStorage`. De esta forma el tiempo medido corresponde al
+costo real de mantener el índice durante la carga; no a construir el índice al
+final sobre una tabla ya llena.
 
-1. **Reducción de I/O por Índice**: `IndexScan` examina solo 1 registro y realiza 4 lecturas físicas frente a las 147 lecturas y 10,000 registros examinados de `SeqScan`.
-2. **Comportamiento del Buffer Pool**: En ejecuciones en **Caché Caliente (`hot`)**, las búsquedas por índice registran **0 misses de disco** adicionales y un incremento directo de los `buffer_hits`.
-3. **Aislabilidad de Métricas**: Las métricas capturadas pertenecen exclusivamente al delta de la consulta en ejecución (`PopulateDeltaStats`), sin contaminarse con totales acumulados del sistema.
+## Ejecución
+
+```bash
+./scripts/run_benchmarks.sh
+```
+
+Resultado:
+
+```text
+results/sprint5_experiments_summary.csv
+```

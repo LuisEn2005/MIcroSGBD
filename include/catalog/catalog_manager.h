@@ -61,6 +61,8 @@ public:
         const std::string& column_name
     ) const;
 
+    bool HasIndexName(const std::string& index_name) const;
+
     HashIndex* GetIndex(
         const std::string& table_name,
         const std::string& column_name

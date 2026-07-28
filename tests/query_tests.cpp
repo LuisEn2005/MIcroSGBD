@@ -134,7 +134,7 @@ void TestParserSelectQuery() {
     assert(select_statement->conditions.size() == 1);
     assert(select_statement->conditions[0].column == "id");
     assert(select_statement->conditions[0].op == ">=");
-    assert(select_statement->conditions[0].value == "10");
+    assert(select_statement->conditions[0].value.text == "10");
 }
 
 void TestParserCreateIndexCaseInsensitive() {
@@ -185,9 +185,12 @@ void TestParserInsertSyntax() {
     assert(insert_statement != nullptr);
     assert(insert_statement->table_name == "students");
     assert(insert_statement->values.size() == 3);
-    assert(insert_statement->values[0] == "10");
-    assert(insert_statement->values[1] == "Ana");
-    assert(insert_statement->values[2] == "true");
+    assert(insert_statement->values[0].kind == LiteralKind::NUMBER);
+    assert(insert_statement->values[0].text == "10");
+    assert(insert_statement->values[1].kind == LiteralKind::STRING);
+    assert(insert_statement->values[1].text == "Ana");
+    assert(insert_statement->values[2].kind == LiteralKind::IDENTIFIER);
+    assert(insert_statement->values[2].text == "true");
 }
 
 void TestRecordCodec() {
@@ -217,7 +220,7 @@ void TestVolcanoFilterAndProjection() {
     plan = std::make_unique<FilterOperator>(
         std::move(plan),
         schema,
-        Condition{"id", ">", "15"}
+        Condition{"id", ">", SQLLiteral{LiteralKind::NUMBER, "15"}}
     );
 
     plan = std::make_unique<ProjectionOperator>(

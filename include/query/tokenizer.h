@@ -23,6 +23,8 @@ enum class TokenType {
     KEYWORD_SET,
     KEYWORD_EXPLAIN,
     KEYWORD_ANALYZE,
+    KEYWORD_AND,
+    KEYWORD_NULL,
     IDENTIFIER,
     NUMBER,
     STRING_LITERAL,
@@ -36,6 +38,7 @@ enum class TokenType {
     SEMICOLON,
     LPAREN,
     RPAREN,
+    INVALID,
     END_OF_FILE
 };
 
@@ -53,6 +56,7 @@ public:
 
 private:
     char Peek() const;
+    char PeekNext() const;
     char Get();
     void SkipWhitespace();
 

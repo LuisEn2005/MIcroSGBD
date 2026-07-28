@@ -146,3 +146,20 @@ Cada entrada de índice guarda:
 
 El catálogo actual ocupa una sola página de 4096 bytes. Cuando los metadatos no
 caben, la operación devuelve `OUT_OF_MEMORY` en lugar de sobrescribir datos.
+
+---
+
+## 6. Páginas libres y reutilización
+
+Una página física desasignada (`PageId >= 1`) se sobrescribe completamente con
+ceros. Al abrir el archivo, `DiskManager` recorre las páginas y reconstruye la
+lista de páginas libres identificando ese patrón.
+
+```text
+Página activa: contiene header/magic/formato válido
+Página libre:  4096 bytes con valor 0
+```
+
+`GetNumPages()` representa el límite superior físico del archivo, no la cantidad
+de páginas activas. Una asignación puede reutilizar un `PageId` menor sin cambiar
+el tamaño del archivo.

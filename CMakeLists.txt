@@ -30,6 +30,7 @@ set(MINI_SGBD_SOURCES
 
     src/catalog/catalog_manager.cpp
 
+    src/query/literal.cpp
     src/query/tokenizer.cpp
     src/query/parser.cpp
     src/query/executor.cpp
@@ -79,6 +80,11 @@ function(add_minidb_test target source)
     add_executable(${target} ${source})
     target_link_libraries(${target} PRIVATE mini_sgbd_core)
     enable_project_warnings(${target})
+    if(MSVC)
+        target_compile_options(${target} PRIVATE /UNDEBUG)
+    else()
+        target_compile_options(${target} PRIVATE -UNDEBUG)
+    endif()
     add_test(NAME ${target} COMMAND ${target})
     set_tests_properties(
         ${target}
@@ -98,4 +104,6 @@ add_minidb_test(sprint3_acceptance_test tests/sprint3_acceptance_test.cpp)
 add_minidb_test(sprint4_storage_tests tests/sprint4_storage_tests.cpp)
 add_minidb_test(sprint4_metrics_tests tests/sprint4_metrics_tests.cpp)
 add_minidb_test(sprint4_query_tests tests/sprint4_query_tests.cpp)
+add_minidb_test(sprint5_stabilization_tests tests/sprint5_stabilization_tests.cpp)
 add_minidb_test(sprint5_experiments tests/sprint5_experiments.cpp)
+set_tests_properties(sprint5_experiments PROPERTIES LABELS "benchmark" TIMEOUT 180)

@@ -1,5 +1,7 @@
 #include "query/parser.h"
 
+#include <limits>
+
 namespace minidbms {
 
 const Token& Parser::Peek() const {
@@ -35,6 +37,13 @@ bool Parser::Match(TokenType type) {
 Status Parser::FinishStatement() {
     Match(TokenType::SEMICOLON);
 
+    if (Peek().type == TokenType::INVALID) {
+        return Status(
+            StatusCode::INVALID_ARGUMENT,
+            Peek().text
+        );
+    }
+
     if (Peek().type != TokenType::END_OF_FILE) {
         return Status(
             StatusCode::INVALID_ARGUMENT,
@@ -43,6 +52,51 @@ Status Parser::FinishStatement() {
     }
 
     return Status::OK();
+}
+
+Status Parser::ParseLiteral(SQLLiteral* literal) {
+    if (literal == nullptr) {
+        return Status(
+            StatusCode::INVALID_ARGUMENT,
+            "La salida del literal no puede ser nula"
+        );
+    }
+
+    const Token token = Advance();
+
+    switch (token.type) {
+        case TokenType::NUMBER:
+            literal->kind = LiteralKind::NUMBER;
+            literal->text = token.text;
+            return Status::OK();
+
+        case TokenType::STRING_LITERAL:
+            literal->kind = LiteralKind::STRING;
+            literal->text = token.text;
+            return Status::OK();
+
+        case TokenType::IDENTIFIER:
+            literal->kind = LiteralKind::IDENTIFIER;
+            literal->text = token.text;
+            return Status::OK();
+
+        case TokenType::KEYWORD_NULL:
+            literal->kind = LiteralKind::NULL_VALUE;
+            literal->text.clear();
+            return Status::OK();
+
+        case TokenType::INVALID:
+            return Status(
+                StatusCode::INVALID_ARGUMENT,
+                token.text
+            );
+
+        default:
+            return Status(
+                StatusCode::INVALID_ARGUMENT,
+                "Se esperaba un literal"
+            );
+    }
 }
 
 Status Parser::ParseCondition(Condition* condition) {
@@ -79,16 +133,33 @@ Status Parser::ParseCondition(Condition* condition) {
         );
     }
 
-    if (Peek().type != TokenType::NUMBER &&
-        Peek().type != TokenType::IDENTIFIER &&
-        Peek().type != TokenType::STRING_LITERAL) {
+    return ParseLiteral(&condition->value);
+}
+
+Status Parser::ParseConditions(
+    std::vector<Condition>* conditions
+) {
+    if (conditions == nullptr) {
         return Status(
             StatusCode::INVALID_ARGUMENT,
-            "Se esperaba un valor en WHERE"
+            "La salida de condiciones no puede ser nula"
         );
     }
 
-    condition->value = Advance().text;
+    while (true) {
+        Condition condition;
+        Status status = ParseCondition(&condition);
+        if (!status.ok()) {
+            return status;
+        }
+
+        conditions->push_back(std::move(condition));
+
+        if (!Match(TokenType::KEYWORD_AND)) {
+            break;
+        }
+    }
+
     return Status::OK();
 }
 
@@ -135,15 +206,12 @@ Status Parser::ParseSelect(
     select_statement->table_name = Advance().text;
 
     if (Match(TokenType::KEYWORD_WHERE)) {
-        Condition condition;
-        Status status = ParseCondition(&condition);
+        Status status = ParseConditions(
+            &select_statement->conditions
+        );
         if (!status.ok()) {
             return status;
         }
-
-        select_statement->conditions.push_back(
-            std::move(condition)
-        );
     }
 
     Status status = FinishStatement();
@@ -185,16 +253,13 @@ Status Parser::ParseInsert(
     }
 
     while (true) {
-        if (Peek().type != TokenType::NUMBER &&
-            Peek().type != TokenType::IDENTIFIER &&
-            Peek().type != TokenType::STRING_LITERAL) {
-            return Status(
-                StatusCode::INVALID_ARGUMENT,
-                "Se esperaba un valor en INSERT"
-            );
+        SQLLiteral literal;
+        Status status = ParseLiteral(&literal);
+        if (!status.ok()) {
+            return status;
         }
 
-        insert_statement->values.push_back(Advance().text);
+        insert_statement->values.push_back(std::move(literal));
 
         if (!Match(TokenType::COMMA)) {
             break;
@@ -254,28 +319,19 @@ Status Parser::ParseUpdate(
         );
     }
 
-    if (Peek().type != TokenType::NUMBER &&
-        Peek().type != TokenType::IDENTIFIER &&
-        Peek().type != TokenType::STRING_LITERAL) {
-        return Status(
-            StatusCode::INVALID_ARGUMENT,
-            "Se esperaba un valor en SET"
-        );
+    Status status = ParseLiteral(&update_statement->new_value);
+    if (!status.ok()) {
+        return status;
     }
 
-    update_statement->new_value = Advance().text;
-
     if (Match(TokenType::KEYWORD_WHERE)) {
-        Condition condition;
-        Status status = ParseCondition(&condition);
+        status = ParseConditions(&update_statement->conditions);
         if (!status.ok()) {
             return status;
         }
-
-        update_statement->conditions.push_back(std::move(condition));
     }
 
-    Status status = FinishStatement();
+    status = FinishStatement();
     if (!status.ok()) {
         return status;
     }
@@ -306,13 +362,12 @@ Status Parser::ParseDelete(
     delete_statement->table_name = Advance().text;
 
     if (Match(TokenType::KEYWORD_WHERE)) {
-        Condition condition;
-        Status status = ParseCondition(&condition);
+        Status status = ParseConditions(
+            &delete_statement->conditions
+        );
         if (!status.ok()) {
             return status;
         }
-
-        delete_statement->conditions.push_back(std::move(condition));
     }
 
     Status status = FinishStatement();
@@ -353,8 +408,8 @@ Status Parser::ParseCreateTable(
             );
         }
 
-        ColumnDefinition col;
-        col.name = Advance().text;
+        ColumnDefinition column;
+        column.name = Advance().text;
 
         if (Peek().type != TokenType::IDENTIFIER) {
             return Status(
@@ -363,7 +418,7 @@ Status Parser::ParseCreateTable(
             );
         }
 
-        col.type_name = Advance().text;
+        column.type_name = Advance().text;
 
         if (Match(TokenType::LPAREN)) {
             if (Peek().type != TokenType::NUMBER) {
@@ -372,7 +427,28 @@ Status Parser::ParseCreateTable(
                     "Se esperaba la longitud del tipo entre parentesis"
                 );
             }
-            col.length = std::stoul(Advance().text);
+
+            try {
+                const unsigned long parsed = std::stoul(
+                    Advance().text
+                );
+
+                if (parsed == 0 ||
+                    parsed > std::numeric_limits<uint32_t>::max()) {
+                    return Status(
+                        StatusCode::INVALID_ARGUMENT,
+                        "Longitud de columna fuera de rango"
+                    );
+                }
+
+                column.length = static_cast<uint32_t>(parsed);
+            } catch (const std::exception&) {
+                return Status(
+                    StatusCode::INVALID_ARGUMENT,
+                    "Longitud de columna invalida"
+                );
+            }
+
             if (!Match(TokenType::RPAREN)) {
                 return Status(
                     StatusCode::INVALID_ARGUMENT,
@@ -381,7 +457,7 @@ Status Parser::ParseCreateTable(
             }
         }
 
-        create_table->columns.push_back(std::move(col));
+        create_table->columns.push_back(std::move(column));
 
         if (!Match(TokenType::COMMA)) {
             break;
@@ -464,7 +540,12 @@ Status Parser::ParseCreateIndex(
 Status Parser::ParseExplain(
     std::unique_ptr<SQLStatement>* statement
 ) {
-    Match(TokenType::KEYWORD_ANALYZE);
+    if (!Match(TokenType::KEYWORD_ANALYZE)) {
+        return Status(
+            StatusCode::INVALID_ARGUMENT,
+            "Se esperaba ANALYZE despues de EXPLAIN"
+        );
+    }
 
     if (!Match(TokenType::KEYWORD_SELECT)) {
         return Status(
@@ -487,6 +568,15 @@ Status Parser::Parse(
     }
 
     statement->reset();
+
+    for (const Token& token : tokens_) {
+        if (token.type == TokenType::INVALID) {
+            return Status(
+                StatusCode::INVALID_ARGUMENT,
+                token.text
+            );
+        }
+    }
 
     if (tokens_.empty() ||
         Peek().type == TokenType::END_OF_FILE) {

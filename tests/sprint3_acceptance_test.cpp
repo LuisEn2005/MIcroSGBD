@@ -251,7 +251,7 @@ QueryStats RunSequentialQuery(
     plan = std::make_unique<FilterOperator>(
         std::move(plan),
         schema,
-        Condition{"id", "=", "7777"}
+        Condition{"id", "=", SQLLiteral{LiteralKind::NUMBER, "7777"}}
     );
 
     assert(plan->Open().ok());

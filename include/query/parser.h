@@ -2,8 +2,10 @@
 #define MINI_DBMS_PARSER_H
 
 #include "common/status.h"
+#include "query/literal.h"
 #include "query/tokenizer.h"
 
+#include <cstdint>
 #include <memory>
 #include <string>
 #include <utility>
@@ -24,7 +26,7 @@ enum class StatementType {
 struct Condition {
     std::string column;
     std::string op;
-    std::string value;
+    SQLLiteral value;
 };
 
 struct ColumnDefinition {
@@ -58,7 +60,7 @@ public:
     }
 
     std::string table_name;
-    std::vector<std::string> values;
+    std::vector<SQLLiteral> values;
 };
 
 class UpdateStatement : public SQLStatement {
@@ -69,7 +71,7 @@ public:
 
     std::string table_name;
     std::string column_name;
-    std::string new_value;
+    SQLLiteral new_value;
     std::vector<Condition> conditions;
 };
 
@@ -116,14 +118,20 @@ private:
     Token Advance();
     bool Match(TokenType type);
 
-    Status ParseSelect(std::unique_ptr<SQLStatement>* statement, bool is_explain = false);
+    Status ParseSelect(
+        std::unique_ptr<SQLStatement>* statement,
+        bool is_explain = false
+    );
     Status ParseInsert(std::unique_ptr<SQLStatement>* statement);
     Status ParseUpdate(std::unique_ptr<SQLStatement>* statement);
     Status ParseDelete(std::unique_ptr<SQLStatement>* statement);
     Status ParseCreateTable(std::unique_ptr<SQLStatement>* statement);
     Status ParseCreateIndex(std::unique_ptr<SQLStatement>* statement);
     Status ParseExplain(std::unique_ptr<SQLStatement>* statement);
+
+    Status ParseLiteral(SQLLiteral* literal);
     Status ParseCondition(Condition* condition);
+    Status ParseConditions(std::vector<Condition>* conditions);
     Status FinishStatement();
 
     std::vector<Token> tokens_;

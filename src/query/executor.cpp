@@ -1,6 +1,7 @@
 #include "query/executor.h"
 
 #include "index/index_key.h"
+#include "query/literal.h"
 #include "query/operators/filter_operator.h"
 #include "query/operators/index_scan_operator.h"
 #include "query/operators/projection_operator.h"
@@ -13,8 +14,9 @@
 #include <algorithm>
 #include <chrono>
 #include <cctype>
-#include <limits>
 #include <string>
+#include <unordered_set>
+#include <utility>
 #include <vector>
 
 namespace minidbms {
@@ -48,93 +50,36 @@ Status FindColumn(
     );
 }
 
-Status ParseLiteral(
-    const Column& column,
-    const std::string& text,
-    FieldValue* value
+Status ClosePlan(
+    AbstractOperator* plan,
+    const Status& current_status
 ) {
-    if (value == nullptr) {
-        return Status(
-            StatusCode::INVALID_ARGUMENT,
-            "Literal output cannot be null"
-        );
+    if (plan == nullptr) {
+        return current_status;
     }
 
-    try {
-        switch (column.type) {
-            case TypeId::INTEGER: {
-                std::size_t consumed = 0;
-                const long long parsed =
-                    std::stoll(text, &consumed);
+    const Status close_status = plan->Close();
+    return current_status.ok() ? close_status : current_status;
+}
 
-                if (consumed != text.size() ||
-                    parsed <
-                        std::numeric_limits<int32_t>::min() ||
-                    parsed >
-                        std::numeric_limits<int32_t>::max()) {
-                    return Status(
-                        StatusCode::INVALID_ARGUMENT,
-                        "Invalid INTEGER literal"
-                    );
-                }
-
-                *value = static_cast<int32_t>(parsed);
-                return Status::OK();
-            }
-
-            case TypeId::VARCHAR:
-                if (column.length > 0 &&
-                    text.size() > column.length) {
-                    return Status(
-                        StatusCode::INVALID_ARGUMENT,
-                        "VARCHAR literal exceeds declared length"
-                    );
-                }
-
-                *value = text;
-                return Status::OK();
-
-            case TypeId::BOOLEAN: {
-                std::string normalized = text;
-                std::transform(
-                    normalized.begin(),
-                    normalized.end(),
-                    normalized.begin(),
-                    [](unsigned char character) {
-                        return static_cast<char>(
-                            std::tolower(character)
-                        );
-                    }
-                );
-
-                if (normalized == "true" ||
-                    normalized == "1") {
-                    *value = true;
-                    return Status::OK();
-                }
-
-                if (normalized == "false" ||
-                    normalized == "0") {
-                    *value = false;
-                    return Status::OK();
-                }
-
-                return Status(
-                    StatusCode::INVALID_ARGUMENT,
-                    "Invalid BOOLEAN literal"
-                );
-            }
-        }
-    } catch (const std::exception&) {
-        return Status(
-            StatusCode::INVALID_ARGUMENT,
-            "Invalid typed literal"
-        );
+Status DestroyIndexAfterFailure(
+    std::unique_ptr<HashIndex>* index,
+    const Status& primary_status
+) {
+    if (index == nullptr || !*index) {
+        return primary_status;
     }
 
-    return Status(
-        StatusCode::INVALID_ARGUMENT,
-        "Unsupported literal type"
+    const Status cleanup_status = (*index)->Destroy();
+    index->reset();
+
+    if (cleanup_status.ok()) {
+        return primary_status;
+    }
+
+    return Status::IOError(
+        "Index creation failed: " + primary_status.message() +
+        "; cleanup failed: " + cleanup_status.message()
     );
 }
 
@@ -142,13 +87,17 @@ Status ParseLiteral(
 
 Status QueryExecutor::Execute(
     const SQLStatement& statement,
-    QueryStats* stats
+    QueryStats* stats,
+    QueryResult* result
 ) {
     QueryStats local_stats;
     QueryStats* active_stats =
         stats != nullptr ? stats : &local_stats;
 
     active_stats->Reset();
+    if (result != nullptr) {
+        result->Reset();
+    }
 
     if (catalog_ == nullptr || bpm_ == nullptr) {
         return Status(
@@ -165,17 +114,14 @@ Status QueryExecutor::Execute(
     }
 
     const auto before_snapshot = bpm_->GetStatsSnapshot();
-    const auto start_time =
-        std::chrono::steady_clock::now();
+    const auto start_time = std::chrono::steady_clock::now();
 
     Status status = Status::OK();
 
     switch (statement.GetType()) {
         case StatementType::SELECT: {
             const auto* select_statement =
-                dynamic_cast<const SelectStatement*>(
-                    &statement
-                );
+                dynamic_cast<const SelectStatement*>(&statement);
 
             if (select_statement == nullptr) {
                 status = Status(
@@ -186,10 +132,13 @@ Status QueryExecutor::Execute(
             }
 
             std::unique_ptr<AbstractOperator> plan;
+            Schema output_schema({});
+
             status = BuildPlan(
                 *select_statement,
                 active_stats,
-                &plan
+                &plan,
+                &output_schema
             );
 
             if (status.ok()) {
@@ -197,19 +146,36 @@ Status QueryExecutor::Execute(
             }
 
             if (status.ok()) {
+                if (result != nullptr) {
+                    for (const Column& column :
+                         output_schema.GetColumns()) {
+                        result->column_names.push_back(column.name);
+                    }
+                }
+
                 Record record;
                 RecordID rid;
 
                 while (plan->Next(&record, &rid)) {
                     ++active_stats->rows_returned;
+
+                    if (result != nullptr) {
+                        std::vector<FieldValue> row;
+                        status = RecordCodec::Deserialize(
+                            output_schema,
+                            record,
+                            &row
+                        );
+
+                        if (!status.ok()) {
+                            break;
+                        }
+
+                        result->rows.push_back(std::move(row));
+                    }
                 }
 
-                const Status close_status =
-                    plan->Close();
-
-                if (!close_status.ok()) {
-                    status = close_status;
-                }
+                status = ClosePlan(plan.get(), status);
             }
 
             break;
@@ -217,9 +183,8 @@ Status QueryExecutor::Execute(
 
         case StatementType::CREATE_TABLE: {
             const auto* create_table =
-                dynamic_cast<const CreateTableStatement*>(
-                    &statement
-                );
+                dynamic_cast<const CreateTableStatement*>(&statement);
+
             if (create_table == nullptr) {
                 status = Status(
                     StatusCode::INVALID_ARGUMENT,
@@ -227,17 +192,16 @@ Status QueryExecutor::Execute(
                 );
                 break;
             }
+
             status = ExecuteCreateTable(*create_table);
             break;
         }
 
         case StatementType::CREATE_INDEX: {
-            const auto* create_statement =
-                dynamic_cast<const CreateIndexStatement*>(
-                    &statement
-                );
+            const auto* create_index =
+                dynamic_cast<const CreateIndexStatement*>(&statement);
 
-            if (create_statement == nullptr) {
+            if (create_index == nullptr) {
                 status = Status(
                     StatusCode::INVALID_ARGUMENT,
                     "Invalid CREATE INDEX statement"
@@ -245,17 +209,14 @@ Status QueryExecutor::Execute(
                 break;
             }
 
-            status = ExecuteCreateIndex(
-                *create_statement
-            );
+            status = ExecuteCreateIndex(*create_index);
             break;
         }
 
         case StatementType::UPDATE: {
             const auto* update_statement =
-                dynamic_cast<const UpdateStatement*>(
-                    &statement
-                );
+                dynamic_cast<const UpdateStatement*>(&statement);
+
             if (update_statement == nullptr) {
                 status = Status(
                     StatusCode::INVALID_ARGUMENT,
@@ -263,15 +224,18 @@ Status QueryExecutor::Execute(
                 );
                 break;
             }
-            status = ExecuteUpdate(*update_statement, active_stats);
+
+            status = ExecuteUpdate(
+                *update_statement,
+                active_stats
+            );
             break;
         }
 
         case StatementType::DELETE: {
             const auto* delete_statement =
-                dynamic_cast<const DeleteStatement*>(
-                    &statement
-                );
+                dynamic_cast<const DeleteStatement*>(&statement);
+
             if (delete_statement == nullptr) {
                 status = Status(
                     StatusCode::INVALID_ARGUMENT,
@@ -279,15 +243,18 @@ Status QueryExecutor::Execute(
                 );
                 break;
             }
-            status = ExecuteDelete(*delete_statement, active_stats);
+
+            status = ExecuteDelete(
+                *delete_statement,
+                active_stats
+            );
             break;
         }
 
         case StatementType::INSERT: {
             const auto* insert_statement =
-                dynamic_cast<const InsertStatement*>(
-                    &statement
-                );
+                dynamic_cast<const InsertStatement*>(&statement);
+
             if (insert_statement == nullptr) {
                 status = Status(
                     StatusCode::INVALID_ARGUMENT,
@@ -295,33 +262,62 @@ Status QueryExecutor::Execute(
                 );
                 break;
             }
-            // Ejecutar inserción usando TableStorage
+
             Schema schema({});
-            status = catalog_->GetTableSchema(insert_statement->table_name, &schema);
-            if (!status.ok()) break;
+            status = catalog_->GetTableSchema(
+                insert_statement->table_name,
+                &schema
+            );
+            if (!status.ok()) {
+                break;
+            }
 
             const auto& columns = schema.GetColumns();
             if (insert_statement->values.size() != columns.size()) {
-                status = Status(StatusCode::INVALID_ARGUMENT, "El numero de valores no coincide con la tabla");
+                status = Status(
+                    StatusCode::INVALID_ARGUMENT,
+                    "The number of values does not match the table schema"
+                );
                 break;
             }
 
             std::vector<FieldValue> values;
             values.reserve(columns.size());
-            for (size_t i = 0; i < columns.size(); ++i) {
-                FieldValue val;
-                status = ParseLiteral(columns[i], insert_statement->values[i], &val);
-                if (!status.ok()) break;
-                values.push_back(std::move(val));
+
+            for (std::size_t index = 0;
+                 index < columns.size();
+                 ++index) {
+                FieldValue value;
+                status = ConvertLiteral(
+                    columns[index],
+                    insert_statement->values[index],
+                    true,
+                    &value
+                );
+
+                if (!status.ok()) {
+                    break;
+                }
+
+                values.push_back(std::move(value));
             }
-            if (!status.ok()) break;
+
+            if (!status.ok()) {
+                break;
+            }
 
             TableStorage storage(bpm_, catalog_);
             RecordID rid;
-            status = storage.InsertRecord(insert_statement->table_name, values, &rid);
+            status = storage.InsertRecord(
+                insert_statement->table_name,
+                values,
+                &rid
+            );
+
             if (status.ok()) {
-                active_stats->rows_returned = 1;
+                active_stats->rows_affected = 1;
             }
+
             break;
         }
 
@@ -333,8 +329,7 @@ Status QueryExecutor::Execute(
             break;
     }
 
-    const auto end_time =
-        std::chrono::steady_clock::now();
+    const auto end_time = std::chrono::steady_clock::now();
     const auto after_snapshot = bpm_->GetStatsSnapshot();
 
     BufferPoolManager::PopulateDeltaStats(
@@ -354,29 +349,72 @@ Status QueryExecutor::Execute(
 Status QueryExecutor::ExecuteCreateTable(
     const CreateTableStatement& statement
 ) {
+    if (statement.table_name.empty() ||
+        statement.columns.empty()) {
+        return Status(
+            StatusCode::INVALID_ARGUMENT,
+            "CREATE TABLE requires a name and at least one column"
+        );
+    }
+
+    Schema existing_schema({});
+    if (catalog_->GetTableSchema(
+            statement.table_name,
+            &existing_schema
+        ).ok()) {
+        return Status(
+            StatusCode::INVALID_ARGUMENT,
+            "Table already exists"
+        );
+    }
+
+    std::unordered_set<std::string> column_names;
     std::vector<Column> columns;
-    for (const auto& col_def : statement.columns) {
-        std::string type_upper = col_def.type_name;
-        std::transform(type_upper.begin(), type_upper.end(), type_upper.begin(),
-                       [](unsigned char c) { return static_cast<char>(std::toupper(c)); });
+    columns.reserve(statement.columns.size());
+
+    for (const auto& definition : statement.columns) {
+        if (definition.name.empty() ||
+            !column_names.insert(definition.name).second) {
+            return Status(
+                StatusCode::INVALID_ARGUMENT,
+                "Column names must be non-empty and unique"
+            );
+        }
+
+        std::string type_upper = definition.type_name;
+        std::transform(
+            type_upper.begin(),
+            type_upper.end(),
+            type_upper.begin(),
+            [](unsigned char character) {
+                return static_cast<char>(std::toupper(character));
+            }
+        );
 
         TypeId type_id = TypeId::INTEGER;
-        uint32_t length = col_def.length;
+        uint32_t length = definition.length;
 
         if (type_upper == "INT" || type_upper == "INTEGER") {
             type_id = TypeId::INTEGER;
-            length = 4;
-        } else if (type_upper == "CHAR" || type_upper == "VARCHAR") {
+            length = sizeof(int32_t);
+        } else if (type_upper == "CHAR" ||
+                   type_upper == "VARCHAR") {
             type_id = TypeId::VARCHAR;
-            if (length == 0) length = 30;
-        } else if (type_upper == "BOOLEAN" || type_upper == "BOOL") {
+            if (length == 0) {
+                length = 30;
+            }
+        } else if (type_upper == "BOOLEAN" ||
+                   type_upper == "BOOL") {
             type_id = TypeId::BOOLEAN;
             length = 1;
         } else {
-            return Status(StatusCode::INVALID_ARGUMENT, "Tipo de datos no soportado: " + col_def.type_name);
+            return Status(
+                StatusCode::INVALID_ARGUMENT,
+                "Unsupported data type: " + definition.type_name
+            );
         }
 
-        columns.push_back({col_def.name, type_id, length});
+        columns.push_back({definition.name, type_id, length});
     }
 
     Schema schema(std::move(columns));
@@ -384,14 +422,55 @@ Status QueryExecutor::ExecuteCreateTable(
     PageId first_page_id = INVALID_PAGE_ID;
     Page* page = bpm_->NewPage(&first_page_id);
     if (page == nullptr) {
-        return Status::IOError("No se pudo asignar la primera pagina para la tabla");
+        return Status::OutOfMemory(
+            "Could not allocate the first table page"
+        );
     }
 
     SlottedPage slotted(page);
-    slotted.Init();
-    bpm_->UnpinPage(first_page_id, true);
+    Status status = slotted.Init();
 
-    return catalog_->CreateTable(statement.table_name, schema, first_page_id);
+    const bool unpinned = bpm_->UnpinPage(
+        first_page_id,
+        status.ok()
+    );
+
+    if (!unpinned) {
+        return Status::IOError(
+            "Could not unpin the first table page"
+        );
+    }
+
+    if (!status.ok()) {
+        bpm_->DeletePage(first_page_id);
+        return status;
+    }
+
+    // La página de datos debe llegar a disco antes de publicar su PageId
+    // en el catálogo persistente.
+    if (!bpm_->FlushPage(first_page_id)) {
+        bpm_->DeletePage(first_page_id);
+        return Status::IOError(
+            "Could not persist the first table page"
+        );
+    }
+
+    status = catalog_->CreateTable(
+        statement.table_name,
+        schema,
+        first_page_id
+    );
+
+    if (!status.ok()) {
+        if (!bpm_->DeletePage(first_page_id)) {
+            return Status::IOError(
+                "CREATE TABLE failed: " + status.message() +
+                "; allocated page cleanup failed"
+            );
+        }
+    }
+
+    return status;
 }
 
 Status QueryExecutor::ExecuteCreateIndex(
@@ -404,6 +483,13 @@ Status QueryExecutor::ExecuteCreateIndex(
         return Status(
             StatusCode::INVALID_ARGUMENT,
             "An index already exists for this table column"
+        );
+    }
+
+    if (catalog_->HasIndexName(statement.index_name)) {
+        return Status(
+            StatusCode::INVALID_ARGUMENT,
+            "Index name already exists"
         );
     }
 
@@ -455,10 +541,10 @@ Status QueryExecutor::ExecuteCreateIndex(
     );
 
     SeqScanOperator scan(std::move(heap_file));
-
     status = scan.Open();
+
     if (!status.ok()) {
-        return status;
+        return DestroyIndexAfterFailure(&index, status);
     }
 
     Record record;
@@ -474,40 +560,33 @@ Status QueryExecutor::ExecuteCreateIndex(
             &value
         );
         if (!status.ok()) {
-            scan.Close();
-            return status;
+            break;
         }
 
-        if (std::holds_alternative<std::monostate>(
-                value
-            )) {
+        if (std::holds_alternative<std::monostate>(value)) {
             continue;
         }
 
         std::string encoded_key;
-        status = IndexKey::Encode(
-            value,
-            &encoded_key
-        );
+        status = IndexKey::Encode(value, &encoded_key);
         if (!status.ok()) {
-            scan.Close();
-            return status;
+            break;
         }
 
-        status = index->Insert(
-            encoded_key,
-            rid
-        );
+        status = index->Insert(encoded_key, rid);
         if (!status.ok()) {
-            scan.Close();
-            return status;
+            break;
         }
     }
 
-    status = scan.Close();
+    status = ClosePlan(&scan, status);
     if (!status.ok()) {
-        return status;
+        return DestroyIndexAfterFailure(&index, status);
     }
+
+    // Se escriben header, buckets y overflow antes de publicar el índice
+    // dentro del catálogo persistente.
+    bpm_->FlushAllPages();
 
     return catalog_->CreateIndex(
         statement.index_name,
@@ -521,93 +600,167 @@ Status QueryExecutor::ExecuteUpdate(
     const UpdateStatement& statement,
     QueryStats* stats
 ) {
-    SelectStatement select_subquery;
-    select_subquery.table_name = statement.table_name;
-    select_subquery.conditions = statement.conditions;
+    SelectStatement select_statement;
+    select_statement.table_name = statement.table_name;
+    select_statement.conditions = statement.conditions;
 
     std::unique_ptr<AbstractOperator> plan;
-    Status status = BuildPlan(select_subquery, stats, &plan);
-    if (!status.ok()) return status;
+    Status status = BuildPlan(
+        select_statement,
+        stats,
+        &plan
+    );
+    if (!status.ok()) {
+        return status;
+    }
 
     status = plan->Open();
-    if (!status.ok()) return status;
+    if (!status.ok()) {
+        return status;
+    }
 
     Schema schema({});
-    status = catalog_->GetTableSchema(statement.table_name, &schema);
+    status = catalog_->GetTableSchema(
+        statement.table_name,
+        &schema
+    );
     if (!status.ok()) {
-        plan->Close();
-        return status;
+        return ClosePlan(plan.get(), status);
     }
 
-    uint32_t col_idx = 0;
-    status = FindColumn(schema, statement.column_name, &col_idx);
+    uint32_t column_index = 0;
+    status = FindColumn(
+        schema,
+        statement.column_name,
+        &column_index
+    );
     if (!status.ok()) {
-        plan->Close();
-        return status;
+        return ClosePlan(plan.get(), status);
     }
 
-    FieldValue new_val;
-    status = ParseLiteral(schema.GetColumns()[col_idx], statement.new_value, &new_val);
+    FieldValue new_value;
+    status = ConvertLiteral(
+        schema.GetColumns()[column_index],
+        statement.new_value,
+        true,
+        &new_value
+    );
     if (!status.ok()) {
-        plan->Close();
-        return status;
+        return ClosePlan(plan.get(), status);
     }
 
-    TableStorage storage(bpm_, catalog_);
+    struct PendingUpdate {
+        RecordID rid;
+        std::vector<FieldValue> values;
+    };
+
+    std::vector<PendingUpdate> pending;
     Record record;
     RecordID rid;
 
     while (plan->Next(&record, &rid)) {
-        std::vector<FieldValue> current_values;
-        status = RecordCodec::Deserialize(schema, record, &current_values);
-        if (!status.ok()) break;
+        std::vector<FieldValue> values;
+        status = RecordCodec::Deserialize(
+            schema,
+            record,
+            &values
+        );
 
-        current_values[col_idx] = new_val;
+        if (!status.ok()) {
+            break;
+        }
 
-        status = storage.UpdateRecord(statement.table_name, rid, current_values);
-        if (!status.ok()) break;
-
-        if (stats) ++stats->rows_returned;
+        values[column_index] = new_value;
+        pending.push_back({rid, std::move(values)});
     }
 
-    plan->Close();
-    return status;
+    status = ClosePlan(plan.get(), status);
+    if (!status.ok()) {
+        return status;
+    }
+
+    TableStorage storage(bpm_, catalog_);
+
+    for (PendingUpdate& update : pending) {
+        status = storage.UpdateRecord(
+            statement.table_name,
+            update.rid,
+            update.values
+        );
+
+        if (!status.ok()) {
+            return status;
+        }
+
+        if (stats != nullptr) {
+            ++stats->rows_affected;
+        }
+    }
+
+    return Status::OK();
 }
 
 Status QueryExecutor::ExecuteDelete(
     const DeleteStatement& statement,
     QueryStats* stats
 ) {
-    SelectStatement select_subquery;
-    select_subquery.table_name = statement.table_name;
-    select_subquery.conditions = statement.conditions;
+    SelectStatement select_statement;
+    select_statement.table_name = statement.table_name;
+    select_statement.conditions = statement.conditions;
 
     std::unique_ptr<AbstractOperator> plan;
-    Status status = BuildPlan(select_subquery, stats, &plan);
-    if (!status.ok()) return status;
+    Status status = BuildPlan(
+        select_statement,
+        stats,
+        &plan
+    );
+    if (!status.ok()) {
+        return status;
+    }
 
     status = plan->Open();
-    if (!status.ok()) return status;
+    if (!status.ok()) {
+        return status;
+    }
 
-    TableStorage storage(bpm_, catalog_);
+    std::vector<RecordID> pending;
     Record record;
     RecordID rid;
 
     while (plan->Next(&record, &rid)) {
-        status = storage.DeleteRecord(statement.table_name, rid);
-        if (!status.ok()) break;
-
-        if (stats) ++stats->rows_returned;
+        pending.push_back(rid);
     }
 
-    plan->Close();
-    return status;
+    status = ClosePlan(plan.get(), status);
+    if (!status.ok()) {
+        return status;
+    }
+
+    TableStorage storage(bpm_, catalog_);
+
+    for (const RecordID candidate : pending) {
+        status = storage.DeleteRecord(
+            statement.table_name,
+            candidate
+        );
+
+        if (!status.ok()) {
+            return status;
+        }
+
+        if (stats != nullptr) {
+            ++stats->rows_affected;
+        }
+    }
+
+    return Status::OK();
 }
 
 Status QueryExecutor::BuildPlan(
     const SelectStatement& select_statement,
     QueryStats* stats,
-    std::unique_ptr<AbstractOperator>* plan
+    std::unique_ptr<AbstractOperator>* plan,
+    Schema* output_schema
 ) {
     if (plan == nullptr) {
         return Status(
@@ -669,9 +822,10 @@ Status QueryExecutor::BuildPlan(
         }
 
         FieldValue typed_value;
-        status = ParseLiteral(
+        status = ConvertLiteral(
             schema.GetColumns()[column_index],
             condition.value,
+            false,
             &typed_value
         );
         if (!status.ok()) {
@@ -686,17 +840,14 @@ Status QueryExecutor::BuildPlan(
             return status;
         }
 
-        indexed_condition =
-            static_cast<int>(index);
+        indexed_condition = static_cast<int>(index);
         break;
     }
 
     if (indexed_condition >= 0) {
         const Condition& condition =
             select_statement.conditions[
-                static_cast<std::size_t>(
-                    indexed_condition
-                )
+                static_cast<std::size_t>(indexed_condition)
             ];
 
         HashIndex* index = catalog_->GetIndex(
@@ -714,41 +865,38 @@ Status QueryExecutor::BuildPlan(
             stats->scan_type = ScanType::HASH_INDEX;
         }
 
-        current_plan =
-            std::make_unique<IndexScanOperator>(
-                index,
-                std::move(heap_file),
-                encoded_key,
-                stats
-            );
+        current_plan = std::make_unique<IndexScanOperator>(
+            index,
+            std::move(heap_file),
+            encoded_key,
+            stats
+        );
     } else {
         if (stats != nullptr) {
             stats->scan_type = ScanType::SEQUENTIAL;
         }
 
-        current_plan =
-            std::make_unique<SeqScanOperator>(
-                std::move(heap_file),
-                stats
-            );
+        current_plan = std::make_unique<SeqScanOperator>(
+            std::move(heap_file),
+            stats
+        );
     }
 
-    // Se conservan todos los filtros, incluso el usado por el índice.
-    // Esto protege contra entradas obsoletas después de futuras
-    // actualizaciones o eliminaciones.
     for (const Condition& condition :
          select_statement.conditions) {
-        current_plan =
-            std::make_unique<FilterOperator>(
-                std::move(current_plan),
-                schema,
-                condition
-            );
+        current_plan = std::make_unique<FilterOperator>(
+            std::move(current_plan),
+            schema,
+            condition
+        );
     }
+
+    Schema result_schema = schema;
 
     if (!select_statement.fields.empty() &&
         select_statement.fields.front() != "*") {
         std::vector<uint32_t> column_indices;
+        std::vector<Column> result_columns;
 
         for (const std::string& field_name :
              select_statement.fields) {
@@ -763,17 +911,23 @@ Status QueryExecutor::BuildPlan(
                 return status;
             }
 
-            column_indices.push_back(
-                column_index
+            column_indices.push_back(column_index);
+            result_columns.push_back(
+                schema.GetColumns()[column_index]
             );
         }
 
-        current_plan =
-            std::make_unique<ProjectionOperator>(
-                std::move(current_plan),
-                schema,
-                std::move(column_indices)
-            );
+        current_plan = std::make_unique<ProjectionOperator>(
+            std::move(current_plan),
+            schema,
+            std::move(column_indices)
+        );
+
+        result_schema = Schema(std::move(result_columns));
+    }
+
+    if (output_schema != nullptr) {
+        *output_schema = result_schema;
     }
 
     *plan = std::move(current_plan);

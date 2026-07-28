@@ -1,16 +1,18 @@
 #include "query/operators/filter_operator.h"
 
+#include "query/literal.h"
 #include "storage/record_codec.h"
 
-#include <algorithm>
-#include <cctype>
-#include <limits>
 #include <string>
 
 namespace minidbms {
 namespace {
 
-bool CompareIntegers(int32_t left, int32_t right, const std::string& op) {
+bool CompareIntegers(
+    int32_t left,
+    int32_t right,
+    const std::string& op
+) {
     if (op == "=") return left == right;
     if (op == ">") return left > right;
     if (op == "<") return left < right;
@@ -51,7 +53,9 @@ Status FilterOperator::Open() {
         );
     }
 
+    column_found_ = false;
     const auto& columns = schema_.GetColumns();
+
     for (uint32_t index = 0; index < columns.size(); ++index) {
         if (columns[index].name == condition_.column) {
             column_index_ = index;
@@ -76,65 +80,11 @@ Status FilterOperator::Open() {
 }
 
 Status FilterOperator::ParseTargetValue() {
-    const Column& column = schema_.GetColumns()[column_index_];
-
-    try {
-        switch (column.type) {
-            case TypeId::INTEGER: {
-                std::size_t consumed = 0;
-                const long long parsed = std::stoll(condition_.value, &consumed);
-                if (consumed != condition_.value.size() ||
-                    parsed < std::numeric_limits<int32_t>::min() ||
-                    parsed > std::numeric_limits<int32_t>::max()) {
-                    return Status(
-                        StatusCode::INVALID_ARGUMENT,
-                        "Invalid INTEGER filter value"
-                    );
-                }
-                target_value_ = static_cast<int32_t>(parsed);
-                return Status::OK();
-            }
-
-            case TypeId::BOOLEAN: {
-                std::string normalized = condition_.value;
-                std::transform(
-                    normalized.begin(),
-                    normalized.end(),
-                    normalized.begin(),
-                    [](unsigned char character) {
-                        return static_cast<char>(std::tolower(character));
-                    }
-                );
-
-                if (normalized == "true" || normalized == "1") {
-                    target_value_ = true;
-                    return Status::OK();
-                }
-                if (normalized == "false" || normalized == "0") {
-                    target_value_ = false;
-                    return Status::OK();
-                }
-
-                return Status(
-                    StatusCode::INVALID_ARGUMENT,
-                    "Invalid BOOLEAN filter value"
-                );
-            }
-
-            case TypeId::VARCHAR:
-                target_value_ = condition_.value;
-                return Status::OK();
-        }
-    } catch (const std::exception&) {
-        return Status(
-            StatusCode::INVALID_ARGUMENT,
-            "Invalid filter value"
-        );
-    }
-
-    return Status(
-        StatusCode::INVALID_ARGUMENT,
-        "Unsupported filter type"
+    return ConvertLiteral(
+        schema_.GetColumns()[column_index_],
+        condition_.value,
+        false,
+        &target_value_
     );
 }
 
@@ -157,20 +107,21 @@ bool FilterOperator::Evaluate(const Record& record) {
 
     if (const auto* left = std::get_if<int32_t>(&actual_value)) {
         const auto* right = std::get_if<int32_t>(&target_value_);
-        return right != nullptr && CompareIntegers(*left, *right, condition_.op);
+        return right != nullptr &&
+               CompareIntegers(*left, *right, condition_.op);
     }
 
     if (const auto* left = std::get_if<std::string>(&actual_value)) {
         const auto* right = std::get_if<std::string>(&target_value_);
-        return right != nullptr && CompareStrings(*left, *right, condition_.op);
+        return right != nullptr &&
+               CompareStrings(*left, *right, condition_.op);
     }
 
     if (const auto* left = std::get_if<bool>(&actual_value)) {
         const auto* right = std::get_if<bool>(&target_value_);
-        if (right == nullptr || condition_.op != "=") {
-            return false;
-        }
-        return *left == *right;
+        return right != nullptr &&
+               condition_.op == "=" &&
+               *left == *right;
     }
 
     return false;
@@ -185,6 +136,7 @@ bool FilterOperator::Next(Record* record, RecordID* rid) {
         if (Evaluate(*record)) {
             return true;
         }
+
         if (!filter_status_.ok()) {
             return false;
         }
@@ -195,9 +147,11 @@ bool FilterOperator::Next(Record* record, RecordID* rid) {
 
 Status FilterOperator::Close() {
     Status child_status = child_ ? child_->Close() : Status::OK();
+
     if (!filter_status_.ok()) {
         return filter_status_;
     }
+
     return child_status;
 }
 

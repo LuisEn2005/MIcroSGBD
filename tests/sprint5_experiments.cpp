@@ -124,6 +124,17 @@ void BuildDatabase(
 
     assert(catalog.CreateTable("users", schema, first_page_id).ok());
 
+    if (with_index) {
+        QueryExecutor executor(&catalog, &bpm);
+        Tokenizer tokenizer(
+            "CREATE INDEX idx_users_id ON users(id);"
+        );
+        Parser parser(tokenizer.Tokenize());
+        std::unique_ptr<SQLStatement> statement;
+        assert(parser.Parse(&statement).ok());
+        assert(executor.Execute(*statement, nullptr).ok());
+    }
+
     TableStorage table_storage(&bpm, &catalog);
 
     for (std::size_t i = 1; i <= record_count; ++i) {
@@ -140,15 +151,6 @@ void BuildDatabase(
 
         RecordID rid;
         assert(table_storage.InsertRecord("users", values, &rid).ok());
-    }
-
-    if (with_index) {
-        QueryExecutor executor(&catalog, &bpm);
-        Tokenizer tokenizer("CREATE INDEX idx_users_id ON users(id);");
-        Parser parser(tokenizer.Tokenize());
-        std::unique_ptr<SQLStatement> stmt;
-        assert(parser.Parse(&stmt).ok());
-        assert(executor.Execute(*stmt, nullptr).ok());
     }
 
     assert(catalog.Flush().ok());
@@ -199,7 +201,7 @@ int main() {
     // EXPERIMENTO 1 & 2 & 3: Comparación IndexScan vs SeqScan, Pool Sizes & Caché
     // -----------------------------------------------------------------
     const std::vector<std::size_t> test_volumes = {1000, 10000};
-    const std::vector<std::size_t> pool_sizes = {4, 16, 64, 256};
+    const std::vector<std::size_t> pool_sizes = {3, 10, 50};
 
     for (std::size_t vol : test_volumes) {
         std::cout << "--> Running Experiments for Volume: " << vol << " records...\n";

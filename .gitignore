@@ -13,3 +13,5 @@ build-debug/
 build-release/
 # Base creada por la consola
 minisgbd.db
+build-release/
+data/*.sql
