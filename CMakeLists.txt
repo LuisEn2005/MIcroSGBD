@@ -20,9 +20,12 @@ set(MINI_SGBD_SOURCES
 
     src/buffer/clock_replacer.cpp
     src/buffer/buffer_pool_manager.cpp
+    
+    src/catalog/catalog_manager.cpp
 
     src/query/tokenizer.cpp
     src/query/parser.cpp
+    src/query/executor.cpp
 )
 
 add_library(mini_sgbd_core ${MINI_SGBD_SOURCES})
@@ -81,11 +84,18 @@ target_link_libraries(query_tests PRIVATE mini_sgbd_core)
 enable_project_warnings(query_tests)
 add_test(NAME query_tests COMMAND query_tests)
 
+# Pruebas de Integracion (Fase 3)
+add_executable(integration_tests tests/integration_tests.cpp)
+target_link_libraries(integration_tests PRIVATE mini_sgbd_core)
+enable_project_warnings(integration_tests)
+add_test(NAME integration_tests COMMAND integration_tests)
+
 set_tests_properties(
     storage_tests
     heap_file_tests
     buffer_tests
     query_tests
+    integration_tests
     PROPERTIES
         WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
 )

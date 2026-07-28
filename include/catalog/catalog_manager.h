@@ -7,23 +7,23 @@
 #include <unordered_map>
 
 namespace minidbms {
-  class CatalogManager {
-    public:
-      CatalogManager() = default;
+    class CatalogManager {
+        public:
+            CatalogManager() = default;
 
-      Status CreateTable(const std::string& table_name, const Schema& schema, PageId first_page_id);
-      Status GetTableSchema(const std::string& table_name, Schema* schema) const;
-      Status GetTableFirstPageId(const std::string& table_name, PageId* first_page_id) const;
+            Status CreateTable(const std::string& table_name, const Schema& schema, PageId first_page_id);
+            Status GetTableSchema(const std::string& table_name, Schema* schema) const;
+            Status GetTableFirstPageId(const std::string& table_name, PageId* first_page_id) const;
 
-    private:
-      struct TableMetaData {
-        std::string name;
-        Schema schema;
-        PageId first_page_id;
-      };
+        private:
+            struct TableMetaData {
+                std::string name;
+                Schema schema;
+                PageId first_page_id;
+            };
 
-      std::unordered_map<std::string, TableMetaData> tables_;
-  };
+            std::unordered_map<std::string, TableMetaData> tables_;
+    };
 
 }
 
