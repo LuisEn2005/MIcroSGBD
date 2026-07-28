@@ -22,6 +22,8 @@ public:
     Status UpdateRecord(const Record& record);
     Status DeleteRecord(RecordID rid);
 
+    Status ContainsPage(PageId page_id, bool* contains);
+
     Status GetFirstRecord(Record* record, RecordID* rid);
     Status GetNextRecord(
         RecordID current_rid,

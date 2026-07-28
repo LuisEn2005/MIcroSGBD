@@ -329,6 +329,71 @@ Status HeapFile::DeleteRecord(RecordID rid) {
     return status;
 }
 
+Status HeapFile::ContainsPage(
+    PageId page_id,
+    bool* contains
+) {
+    if (contains == nullptr) {
+        return Status(
+            StatusCode::INVALID_ARGUMENT,
+            "ContainsPage output cannot be null"
+        );
+    }
+
+    *contains = false;
+
+    if (page_id <= HEADER_PAGE_ID) {
+        return Status(
+            StatusCode::INVALID_ARGUMENT,
+            "Page id must refer to a data page"
+        );
+    }
+
+    std::unordered_set<PageId> visited_pages;
+    PageId current_page_id = first_page_id_;
+
+    while (current_page_id != INVALID_PAGE_ID) {
+        if (!visited_pages.insert(current_page_id).second) {
+            return Status::IOError(
+                "Cycle detected in HeapFile page chain"
+            );
+        }
+
+        if (current_page_id == page_id) {
+            *contains = true;
+            return Status::OK();
+        }
+
+        Page* page = bpm_->FetchPage(current_page_id);
+        if (page == nullptr) {
+            return Status::IOError(
+                "Could not fetch HeapFile page while validating ownership"
+            );
+        }
+
+        SlottedPage slotted_page(page);
+        if (!slotted_page.IsInitialized()) {
+            bpm_->UnpinPage(current_page_id, false);
+            return Status::IOError(
+                "HeapFile contains an uninitialized page"
+            );
+        }
+
+        const PageId next_page_id =
+            slotted_page.GetNextPageId();
+
+        if (!bpm_->UnpinPage(current_page_id, false)) {
+            return Status::IOError(
+                "Could not unpin HeapFile page while validating ownership"
+            );
+        }
+
+        current_page_id = next_page_id;
+    }
+
+    return Status::OK();
+}
+
 Status HeapFile::GetFirstRecord(
     Record* record,
     RecordID* rid
