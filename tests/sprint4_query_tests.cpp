@@ -75,7 +75,7 @@ int main() {
         // 5. UPDATE
         QueryStats update_stats;
         assert(ExecuteSQL(executor, "UPDATE alumnos SET edad = 21 WHERE id = 1;", &update_stats).ok());
-        assert(update_stats.rows_returned == 1);
+        assert(update_stats.rows_affected == 1);
 
         // Verificar el cambio de valor en SELECT
         QueryStats check_stats;
@@ -85,7 +85,7 @@ int main() {
         // 6. DELETE
         QueryStats delete_stats;
         assert(ExecuteSQL(executor, "DELETE FROM alumnos WHERE id = 2;", &delete_stats).ok());
-        assert(delete_stats.rows_returned == 1);
+        assert(delete_stats.rows_affected == 1);
 
         QueryStats post_delete_stats;
         assert(ExecuteSQL(executor, "SELECT * FROM alumnos WHERE id = 2;", &post_delete_stats).ok());

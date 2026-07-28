@@ -3,10 +3,12 @@
 
 #include "buffer/buffer_pool_manager.h"
 #include "catalog/catalog_manager.h"
+#include "catalog/schema.h"
 #include "common/status.h"
 #include "metrics/query_stats.h"
 #include "query/operators/abstract_operator.h"
 #include "query/parser.h"
+#include "query/query_result.h"
 
 #include <memory>
 
@@ -23,14 +25,16 @@ public:
 
     Status Execute(
         const SQLStatement& statement,
-        QueryStats* stats
+        QueryStats* stats = nullptr,
+        QueryResult* result = nullptr
     );
 
 private:
     Status BuildPlan(
         const SelectStatement& select_statement,
         QueryStats* stats,
-        std::unique_ptr<AbstractOperator>* plan
+        std::unique_ptr<AbstractOperator>* plan,
+        Schema* output_schema = nullptr
     );
 
     Status ExecuteCreateIndex(

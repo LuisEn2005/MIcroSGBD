@@ -33,6 +33,7 @@ struct QueryStats {
     uint64_t pages_scanned{0};
     uint64_t records_examined{0};
     uint64_t rows_returned{0};
+    uint64_t rows_affected{0};
     double execution_time_ms{0.0};
 
     void Reset() {
