@@ -2,14 +2,14 @@
 #include <string>
 #include <memory>
 
-#include "../include/query/tokenizer.h"
-#include "../include/query/parser.h"
-#include "../include/query/executor.h"
-#include "../include/metrics/query_stats.h"
-#include "../include/buffer/buffer_pool_manager.h"
-#include "../include/buffer/clock_replacer.h"
-#include "../include/storage/disk_manager.h"
-#include "../include/catalog/catalog_manager.h"
+#include "query/tokenizer.h"
+#include "query/parser.h"
+#include "query/executor.h"
+#include "metrics/query_stats.h"
+#include "buffer/buffer_pool_manager.h"
+#include "buffer/clock_replacer.h"
+#include "storage/disk_manager.h"
+#include "catalog/catalog_manager.h"
 
 using namespace minidbms;
 
@@ -64,3 +64,5 @@ int main() {
 
     return 0;
 }
+
+
