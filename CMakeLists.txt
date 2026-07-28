@@ -6,43 +6,25 @@ project(
     LANGUAGES CXX
 )
 
-# ==========================================
-# Configuración general
-# ==========================================
-
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
 find_package(Threads REQUIRED)
 
-# ==========================================
-# Código principal del Mini-SGBD
-# Lista explícita de archivos de código fuente
-# ==========================================
-
 set(MINI_SGBD_SOURCES
-    # Módulo Storage (Integrante 1)
     src/storage/disk_manager.cpp
     src/storage/page.cpp
     src/storage/slotted_page.cpp
 
-    # Módulo Buffer Pool (Integrante 2)
     src/buffer/clock_replacer.cpp
     src/buffer/buffer_pool_manager.cpp
-    
-    # Módulo Query Engine (Integrante 3)
+
     src/query/tokenizer.cpp
     src/query/parser.cpp
-
-    # Aumentar fuentes .cpp
 )
 
-# Librería principal
-add_library(
-    mini_sgbd_core
-    ${MINI_SGBD_SOURCES}
-)
+add_library(mini_sgbd_core ${MINI_SGBD_SOURCES})
 
 target_include_directories(
     mini_sgbd_core
@@ -56,99 +38,47 @@ target_link_libraries(
         Threads::Threads
 )
 
-# ==========================================
-# Advertencias de compilación
-# ==========================================
+function(enable_project_warnings target_name)
+    if(MSVC)
+        target_compile_options(${target_name} PRIVATE /W4)
+    else()
+        target_compile_options(
+            ${target_name}
+            PRIVATE
+                -Wall
+                -Wextra
+                -Wpedantic
+        )
+    endif()
+endfunction()
 
-if(MSVC)
-    target_compile_options(
-        mini_sgbd_core
-        PRIVATE
-            /W4
-    )
-else()
-    target_compile_options(
-        mini_sgbd_core
-        PRIVATE
-            -Wall
-            -Wextra
-            -Wpedantic
-    )
-endif()
+enable_project_warnings(mini_sgbd_core)
 
-# ==========================================
-# Ejecutable principal
-# ==========================================
-
-add_executable(
-    ${PROJECT_NAME}
-    src/main.cpp
-)
-
-target_link_libraries(
-    ${PROJECT_NAME}
-    PRIVATE
-        mini_sgbd_core
-)
-
-# ==========================================
-# Pruebas (CTest)
-# ==========================================
+add_executable(mini-sgbd src/main.cpp)
+target_link_libraries(mini-sgbd PRIVATE mini_sgbd_core)
+enable_project_warnings(mini-sgbd)
 
 enable_testing()
 
-# Pruebas de Storage
 add_executable(storage_tests tests/storage_tests.cpp)
 target_link_libraries(storage_tests PRIVATE mini_sgbd_core)
-add_test(NAME StorageTests COMMAND storage_tests)
+enable_project_warnings(storage_tests)
+add_test(NAME storage_tests COMMAND storage_tests)
 
-# Pruebas del Query Engine (Corregido: mini_sgbd_core)
+add_executable(buffer_tests tests/buffer_tests.cpp)
+target_link_libraries(buffer_tests PRIVATE mini_sgbd_core)
+enable_project_warnings(buffer_tests)
+add_test(NAME buffer_tests COMMAND buffer_tests)
+
 add_executable(query_tests tests/query_tests.cpp)
 target_link_libraries(query_tests PRIVATE mini_sgbd_core)
-add_test(NAME QueryTests COMMAND query_tests)
+enable_project_warnings(query_tests)
+add_test(NAME query_tests COMMAND query_tests)
 
-if(NOT MSVC)
-    target_compile_options(storage_tests PRIVATE -Wall -Wextra -Wpedantic)
-    target_compile_options(query_tests PRIVATE -Wall -Wextra -Wpedantic)
-endif()
-
-add_test(
-    NAME storage_sprint1_tests
-    COMMAND storage_tests
-)
-
-# ==========================================
-# Pruebas del Buffer Pool (Integrante 2)
-# ==========================================
-
-add_executable(
+set_tests_properties(
+    storage_tests
     buffer_tests
-    tests/buffer_tests.cpp
-)
-
-target_link_libraries(
-    buffer_tests
-    PRIVATE
-        mini_sgbd_core
-)
-
-if(MSVC)
-    target_compile_options(
-        buffer_tests
-        PRIVATE
-            /W4
-    )
-else()
-    target_compile_options(
-        buffer_tests
-        PRIVATE
-            -Wall
-            -Wextra
-            -Wpedantic
-    )
-endif()
-
-add_test(
-    NAME buffer_sprint1_tests
-    COMMAND buffer_tests
+    query_tests
+    PROPERTIES
+        WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
 )

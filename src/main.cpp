@@ -1,8 +1,8 @@
 #include <iostream>
 #include <string>
-#include "../include/query/tokenizer.h"
-#include "../include/query/parser.h"
-#include "../include/query/executor.h"
+#include "query/tokenizer.h"
+#include "query/parser.h"
+#include "query/executor.h"
 
 using namespace minidbms;
 

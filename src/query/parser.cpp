@@ -1,4 +1,4 @@
-#include "../../include/query/parser.h"
+#include "query/parser.h"
 
 namespace minidbms {
     const Token& Parser::Peek() const {

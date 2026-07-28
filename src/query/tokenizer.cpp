@@ -1,4 +1,4 @@
-#include "../../include/query/tokenizer.h"
+#include "query/tokenizer.h"
 
 #include <cctype>
 #include <algorithm>
