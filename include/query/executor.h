@@ -37,6 +37,20 @@ private:
         const CreateIndexStatement& statement
     );
 
+    Status ExecuteCreateTable(
+        const CreateTableStatement& statement
+    );
+
+    Status ExecuteUpdate(
+        const UpdateStatement& statement,
+        QueryStats* stats
+    );
+
+    Status ExecuteDelete(
+        const DeleteStatement& statement,
+        QueryStats* stats
+    );
+
     CatalogManager* catalog_;
     BufferPoolManager* bpm_;
 };
