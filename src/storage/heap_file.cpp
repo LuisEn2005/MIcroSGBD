@@ -1,7 +1,7 @@
-#include "storage/heap_file.h"
+#include "../../include/storage/heap_file.h"
 
-#include "common/config.h"
-#include "storage/slotted_page.h"
+#include "../../include/common/config.h"
+#include "../../include/storage/slotted_page.h"
 
 #include <stdexcept>
 #include <unordered_set>
@@ -66,11 +66,11 @@ Status HeapFile::InsertRecord(
         SlottedPage slotted_page(page);
 
         if (!slotted_page.IsInitialized()) {
-            bpm_->UnpinPage(current_page_id, false);
-
-            return Status::IOError(
-                "HeapFile contains an uninitialized page"
-            );
+            Status init_status = slotted_page.Init();
+            if (!init_status.ok()) {
+                bpm_->UnpinPage(current_page_id, false);
+                return init_status;
+            }
         }
 
         SlotId slot_id = 0;

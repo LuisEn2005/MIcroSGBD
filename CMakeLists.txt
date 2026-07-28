@@ -29,6 +29,8 @@ set(MINI_SGBD_SOURCES
     
     src/catalog/catalog_manager.cpp
 
+    src/index/hash_index.cpp
+
     src/query/tokenizer.cpp
     src/query/parser.cpp
     src/query/executor.cpp
@@ -105,6 +107,11 @@ target_link_libraries(integration_tests PRIVATE mini_sgbd_core)
 enable_project_warnings(integration_tests)
 add_test(NAME integration_tests COMMAND integration_tests)
 
+add_executable(sprint3_acceptance_test tests/sprint3_acceptance_test.cpp)
+target_link_libraries(sprint3_acceptance_test PRIVATE mini_sgbd_core)
+enable_project_warnings(sprint3_acceptance_test)
+add_test(NAME sprint3_acceptance_test COMMAND sprint3_acceptance_test)
+
 set_tests_properties(
     storage_tests
     heap_file_tests
@@ -112,6 +119,7 @@ set_tests_properties(
     buffer_tests
     query_tests
     integration_tests
+    sprint3_acceptance_test
     PROPERTIES
         WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
 )

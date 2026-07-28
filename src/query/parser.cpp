@@ -1,4 +1,4 @@
-#include "query/parser.h"
+#include "../../include/query/parser.h"
 
 namespace minidbms {
     const Token& Parser::Peek() const {
@@ -22,8 +22,6 @@ namespace minidbms {
 
     Status Parser::ParseSelect(std::unique_ptr<SQLStatement>* stmt) {
         auto select_stmt = std::make_unique<SelectStatement>();
-
-        Advance();
 
         if (Match(TokenType::ASTERISK)) {
             select_stmt->fields.push_back("*");
@@ -98,19 +96,57 @@ namespace minidbms {
     }
 
     Status Parser::Parse(std::unique_ptr<SQLStatement>* stmt) {
-        if (tokens_.empty() || Peek().type == TokenType::END_OF_FILE) {
-            return Status(StatusCode::INVALID_ARGUMENT, "No hay tokens para procesar");
+        if (tokens_.empty()) {
+            return Status(StatusCode::INVALID_ARGUMENT, "Lista de tokens vacia");
         }
+        
+        const auto& first_token = Peek();
 
-        if (Peek().type == TokenType::KEYWORD_SELECT) {
+        if (Match(TokenType::KEYWORD_SELECT)) {
             return ParseSelect(stmt);
-        } else if (Peek().type == TokenType::KEYWORD_INSERT) {
+        } else if (Match(TokenType::KEYWORD_INSERT)) {
             return ParseInsert(stmt);
+        } else if (first_token.type == TokenType::IDENTIFIER && first_token.text == "CREATE") {
+            Advance();
+            return ParseCreateIndex(stmt);
         }
 
-        return Status(StatusCode::INVALID_ARGUMENT, "Comando SQL no soportado");
+        return Status(StatusCode::INVALID_ARGUMENT, "Comando SQL no reconocido");
     }
 
+    Status Parser::ParseCreateIndex(std::unique_ptr<SQLStatement>* stmt) {
+        auto create_stmt = std::make_unique<CreateIndexStatement>();
+
+        if (cursor_ >= tokens_.size() || Peek().text != "INDEX") {
+            return Status(StatusCode::INVALID_ARGUMENT, "Se esperaba 'INDEX'");
+        }
+        Advance();
+
+        if (cursor_ >= tokens_.size()) return Status(StatusCode::INVALID_ARGUMENT, "Se esperaba nombre del indice");
+        create_stmt->index_name = Advance().text;
+
+        if (cursor_ >= tokens_.size() || Peek().text != "ON") {
+            return Status(StatusCode::INVALID_ARGUMENT, "Se esperaba 'ON'");
+        }
+        Advance();
+
+        if (cursor_ >= tokens_.size()) return Status(StatusCode::INVALID_ARGUMENT, "Se esperaba nombre de la tabla");
+        create_stmt->table_name = Advance().text;
+
+        if (!Match(TokenType::LPAREN)) {
+            return Status(StatusCode::INVALID_ARGUMENT, "Se esperaba '('");
+        }
+
+        if (cursor_ >= tokens_.size()) return Status(StatusCode::INVALID_ARGUMENT, "Se esperaba nombre de la columna");
+        create_stmt->column_name = Advance().text;
+
+        if (!Match(TokenType::RPAREN)) {
+            return Status(StatusCode::INVALID_ARGUMENT, "Se esperaba ')'");
+        }
+
+        *stmt = std::move(create_stmt);
+        return Status::OK();
+    }
 } // namespace minidbms
 
 

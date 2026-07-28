@@ -1,4 +1,4 @@
-#include "query/tokenizer.h"
+#include "../../include/query/tokenizer.h"
 
 #include <algorithm>
 #include <cctype>
@@ -26,8 +26,32 @@ void Tokenizer::SkipWhitespace() {
     }
 }
 
-std::vector<Token> Tokenizer::Tokenize() {
-    std::vector<Token> tokens;
+    std::vector<Token> Tokenizer::Tokenize() {
+        cursor_ = 0;
+        std::vector<Token> tokens;
+
+        while (cursor_ < sql_.size()) {
+            SkipWhitespace();
+            if (cursor_ >= sql_.size()) break;
+
+            char c = Peek();
+
+            // Caracteres individuales
+            if (c == '*') { Get(); tokens.push_back({TokenType::ASTERISK, "*"}); continue; }
+            if (c == ',') { Get(); tokens.push_back({TokenType::COMMA, ","}); continue; }
+            if (c == '=') { Get(); tokens.push_back({TokenType::EQUAL, "="}); continue; }
+            if (c == '>') { Get(); tokens.push_back({TokenType::GREATER, ">"}); continue; }
+            if (c == '<') { Get(); tokens.push_back({TokenType::LESS, "<"}); continue; }
+            if (c == ';') { Get(); tokens.push_back({TokenType::SEMICOLON, ";"}); continue; }
+            if (c == '(') { Get(); tokens.push_back({TokenType::LPAREN, "("}); continue; }
+            if (c == ')') { Get(); tokens.push_back({TokenType::RPAREN, ")"}); continue; }
+
+            // Identificadores y Palabras Clave
+            if (std::isalpha(static_cast<unsigned char>(c)) || c == '_') {
+                std::string word;
+                while (cursor_ < sql_.size() && (std::isalnum(static_cast<unsigned char>(Peek())) || Peek() == '_')) {
+                    word += Get();
+                }
 
     while (cursor_ < sql_.size()) {
         SkipWhitespace();

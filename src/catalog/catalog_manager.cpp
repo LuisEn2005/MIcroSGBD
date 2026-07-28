@@ -34,29 +34,26 @@ namespace minidbms {
         return Status::OK();
     }
 
-    Status CatalogManager::CreateIndex(const std::string& index_name, const std::string& table_name, const std::string& column_name, PageId header_page_id) {
+    Status CatalogManager::CreateIndex(const std::string& index_name, const std::string& table_name, const std::string& column_name, HashIndex* index_ptr) {
+        (void)index_name;
         std::string key = table_name + "." + column_name;
-        if (indexes_.find(key) != indexes_.end()) {
-            return Status(StatusCode::INVALID_ARGUMENT, "El indice para esta columna ya existe");
-        }
-
-        indexes_.emplace(key, IndexMetadata{index_name, table_name, column_name, header_page_id});
+        indexes_[key] = index_ptr;
         return Status::OK();
     }
 
-    Status CatalogManager::GetIndexHeaderPageId(const std::string& table_name, const std::string& column_name, PageId* header_page_id) const {
+    bool CatalogManager::HasIndex(const std::string& table_name, const std::string& column_name) const {
+        std::string key = table_name + "." + column_name;
+        return indexes_.find(key) != indexes_.end();
+    }
+
+    HashIndex* CatalogManager::GetIndex(const std::string& table_name, const std::string& column_name) const {
         std::string key = table_name + "." + column_name;
         auto it = indexes_.find(key);
-        if (it == indexes_.end()) {
-            return Status(StatusCode::NOT_FOUND, "Indice no encontrado en el catalogo");
+        if (it != indexes_.end()) {
+            return it->second;
         }
-
-        if (header_page_id) {
-            *header_page_id = it->second.header_page_id;
-        }
-        return Status::OK();
+        return nullptr;
     }
-
 } // namespace minidbms
 
 
