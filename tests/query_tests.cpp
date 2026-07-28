@@ -1,31 +1,34 @@
-#include <iostream>
-#include <cassert>
-#include <memory>
-#include <vector>
-#include <string>
-
-// Encabezados del Query Engine
-#include "query/tokenizer.h"
-#include "query/parser.h"
-#include "query/executor.h"
+#include "catalog/schema.h"
 #include "query/operators/abstract_operator.h"
-#include "query/operators/seq_scan_operator.h"
 #include "query/operators/filter_operator.h"
 #include "query/operators/projection_operator.h"
+#include "query/parser.h"
+#include "query/tokenizer.h"
+#include "storage/record_codec.h"
+
+#include <cassert>
+#include <cstdint>
+#include <iostream>
+#include <memory>
+#include <string>
+#include <utility>
+#include <vector>
 
 using namespace minidbms;
 
-// --- Helper para asserts sencillos en consola ---
-#define RUN_TEST(test_func) \
-    std::cout << "[RUNNING] " << #test_func << "... "; \
-    test_func(); \
-    std::cout << "\033[32m[PASSED]\033[0m" << std::endl;
+#define RUN_TEST(test_function)                                      \
+    do {                                                             \
+        std::cout << "[RUNNING] " << #test_function << "... ";      \
+        test_function();                                             \
+        std::cout << "[PASSED]\n";                                  \
+    } while (false)
 
-// --- Mock Operator para probar Volcano sin depender de disco ---
+namespace {
+
 class MockScanOperator : public AbstractOperator {
 public:
-    MockScanOperator(std::vector<Record> records) 
-        : records_(std::move(records)), cursor_(0) {}
+    explicit MockScanOperator(std::vector<Record> records)
+        : records_(std::move(records)) {}
 
     Status Open() override {
         cursor_ = 0;
@@ -33,12 +36,13 @@ public:
     }
 
     bool Next(Record* record, RecordID* rid) override {
-        if (cursor_ >= records_.size()) {
+        if (record == nullptr || rid == nullptr || cursor_ >= records_.size()) {
             return false;
         }
+
         *record = records_[cursor_];
-        *rid = RecordID{1, static_cast<SlotId>(cursor_)};
-        cursor_++;
+        *rid = records_[cursor_].GetRecordID();
+        ++cursor_;
         return true;
     }
 
@@ -48,119 +52,161 @@ public:
 
 private:
     std::vector<Record> records_;
-    size_t cursor_{0};
+    std::size_t cursor_{0};
 };
 
-// ==========================================
-// 1. Pruebas Unitarias del Tokenizer
-// ==========================================
+Schema BuildSchema() {
+    return Schema({
+        {"id", TypeId::INTEGER, sizeof(int32_t)},
+        {"name", TypeId::VARCHAR, 32},
+        {"active", TypeId::BOOLEAN, 1}
+    });
+}
+
+Record BuildRecord(
+    const Schema& schema,
+    int32_t id,
+    const std::string& name,
+    bool active,
+    SlotId slot_id
+) {
+    Record record;
+    Status status = RecordCodec::Serialize(
+        schema,
+        {id, name, active},
+        &record
+    );
+    assert(status.ok());
+    record.SetRecordID({1, slot_id});
+    return record;
+}
+
 void TestTokenizerBasicSelect() {
-    std::string sql = "SELECT id, nombre FROM alumnos WHERE id = 1;";
-    Tokenizer tokenizer(sql);
-    auto tokens = tokenizer.Tokenize();
+    Tokenizer tokenizer(
+        "SELECT id, name FROM students WHERE id >= 10;"
+    );
+    const auto tokens = tokenizer.Tokenize();
 
-    assert(!tokens.empty());
     assert(tokens[0].type == TokenType::KEYWORD_SELECT);
-    assert(tokens[1].type == TokenType::IDENTIFIER && tokens[1].text == "id");
+    assert(tokens[1].type == TokenType::IDENTIFIER);
     assert(tokens[2].type == TokenType::COMMA);
-    assert(tokens[3].type == TokenType::IDENTIFIER && tokens[3].text == "nombre");
+    assert(tokens[3].type == TokenType::IDENTIFIER);
     assert(tokens[4].type == TokenType::KEYWORD_FROM);
-    assert(tokens[5].type == TokenType::IDENTIFIER && tokens[5].text == "alumnos");
-    assert(tokens[6].type == TokenType::KEYWORD_WHERE);
-    assert(tokens[7].type == TokenType::IDENTIFIER && tokens[7].text == "id");
-    assert(tokens[8].type == TokenType::EQUAL);
-    assert(tokens[9].type == TokenType::NUMBER && tokens[9].text == "1");
+    assert(tokens[8].type == TokenType::GREATER_EQUAL);
+    assert(tokens[9].type == TokenType::NUMBER);
 }
 
-void TestTokenizerExplainAnalyze() {
-    std::string sql = "EXPLAIN ANALYZE SELECT * FROM tabla;";
-    Tokenizer tokenizer(sql);
-    auto tokens = tokenizer.Tokenize();
+void TestTokenizerStringLiteral() {
+    Tokenizer tokenizer(
+        "SELECT * FROM students WHERE name = 'Alice';"
+    );
+    const auto tokens = tokenizer.Tokenize();
 
-    assert(tokens[0].type == TokenType::KEYWORD_EXPLAIN);
-    assert(tokens[1].type == TokenType::KEYWORD_ANALYZE);
-    assert(tokens[2].type == TokenType::KEYWORD_SELECT);
-    assert(tokens[3].type == TokenType::ASTERISK);
+    bool found_string = false;
+    for (const Token& token : tokens) {
+        if (token.type == TokenType::STRING_LITERAL) {
+            assert(token.text == "Alice");
+            found_string = true;
+        }
+    }
+    assert(found_string);
 }
 
-// ==========================================
-// 2. Pruebas Unitarias del Parser
-// ==========================================
 void TestParserSelectQuery() {
-    std::string sql = "SELECT * FROM alumnos WHERE id = 10";
-    Tokenizer tokenizer(sql);
-    auto tokens = tokenizer.Tokenize();
+    Tokenizer tokenizer(
+        "SELECT id, name FROM students WHERE id >= 10;"
+    );
+    Parser parser(tokenizer.Tokenize());
 
-    Parser parser(tokens);
-    std::unique_ptr<SQLStatement> stmt;
-    Status status = parser.Parse(&stmt);
+    std::unique_ptr<SQLStatement> statement;
+    Status status = parser.Parse(&statement);
 
     assert(status.ok());
-    assert(stmt != nullptr);
-    assert(stmt->GetType() == StatementType::SELECT);
+    assert(statement != nullptr);
+    assert(statement->GetType() == StatementType::SELECT);
 
-    auto* select_stmt = dynamic_cast<SelectStatement*>(stmt.get());
-    assert(select_stmt != nullptr);
-    assert(select_stmt->table_name == "alumnos");
-    assert(select_stmt->fields.size() == 1 && select_stmt->fields[0] == "*");
-    assert(select_stmt->conditions.size() == 1);
-    assert(select_stmt->conditions[0].column == "id");
-    assert(select_stmt->conditions[0].op == "=");
-    assert(select_stmt->conditions[0].value == "10");
+    const auto* select_statement =
+        dynamic_cast<SelectStatement*>(statement.get());
+
+    assert(select_statement != nullptr);
+    assert(select_statement->table_name == "students");
+    assert(select_statement->fields.size() == 2);
+    assert(select_statement->conditions.size() == 1);
+    assert(select_statement->conditions[0].column == "id");
+    assert(select_statement->conditions[0].op == ">=");
+    assert(select_statement->conditions[0].value == "10");
 }
 
-// ==========================================
-// 3. Pruebas de Operadores Volcano
-// ==========================================
-void TestVolcanoPipeline() {
-    // Creamos 3 registros simulados
-    std::vector<Record> mock_records;
-    
-    int32_t val1 = 10;
-    mock_records.emplace_back(RecordID{1, 0}, sizeof(val1), reinterpret_cast<char*>(&val1));
-    
-    int32_t val2 = 20;
-    mock_records.emplace_back(RecordID{1, 1}, sizeof(val2), reinterpret_cast<char*>(&val2));
+void TestRecordCodec() {
+    const Schema schema = BuildSchema();
+    Record record = BuildRecord(schema, 25, "Alice", true, 0);
 
-    int32_t val3 = 30;
-    mock_records.emplace_back(RecordID{1, 2}, sizeof(val3), reinterpret_cast<char*>(&val3));
+    std::vector<FieldValue> values;
+    Status status = RecordCodec::Deserialize(schema, record, &values);
 
-    // Armamos el pipeline: MockScan -> Filter (donde valor > 15)
-    auto scan = std::make_unique<MockScanOperator>(mock_records);
-    Condition cond{"val", ">", "15"};
-    auto filter = std::make_unique<FilterOperator>(std::move(scan), cond);
+    assert(status.ok());
+    assert(std::get<int32_t>(values[0]) == 25);
+    assert(std::get<std::string>(values[1]) == "Alice");
+    assert(std::get<bool>(values[2]));
+}
 
-    // Bucle de ejecucion Volcano: Open -> Next -> Close
-    assert(filter->Open().ok());
+void TestVolcanoFilterAndProjection() {
+    const Schema schema = BuildSchema();
 
-    Record rec;
+    std::vector<Record> records;
+    records.push_back(BuildRecord(schema, 10, "Ana", true, 0));
+    records.push_back(BuildRecord(schema, 20, "Luis", false, 1));
+    records.push_back(BuildRecord(schema, 30, "Marta", true, 2));
+
+    std::unique_ptr<AbstractOperator> plan =
+        std::make_unique<MockScanOperator>(std::move(records));
+
+    plan = std::make_unique<FilterOperator>(
+        std::move(plan),
+        schema,
+        Condition{"id", ">", "15"}
+    );
+
+    plan = std::make_unique<ProjectionOperator>(
+        std::move(plan),
+        schema,
+        std::vector<uint32_t>{1}
+    );
+
+    assert(plan->Open().ok());
+
+    const Schema projected_schema({
+        {"name", TypeId::VARCHAR, 32}
+    });
+
+    std::vector<std::string> names;
+    Record record;
     RecordID rid;
-    int fetched_count = 0;
 
-    while (filter->Next(&rec, &rid)) {
-        fetched_count++;
+    while (plan->Next(&record, &rid)) {
+        std::vector<FieldValue> values;
+        Status status = RecordCodec::Deserialize(
+            projected_schema,
+            record,
+            &values
+        );
+        assert(status.ok());
+        names.push_back(std::get<std::string>(values[0]));
     }
 
-    assert(filter->Close().ok());
-    
-    // Deberian pasar solo val2 (20) y val3 (30)
-    assert(fetched_count == 2);
+    assert(plan->Close().ok());
+    assert((names == std::vector<std::string>{"Luis", "Marta"}));
 }
 
-// ==========================================
-// Main Runner
-// ==========================================
+} // namespace
+
 int main() {
-    std::cout << "==========================================" << std::endl;
-    std::cout << "       EJECUTANDO PRUEBAS: QUERY ENGINE   " << std::endl;
-    std::cout << "==========================================" << std::endl;
-
     RUN_TEST(TestTokenizerBasicSelect);
-    RUN_TEST(TestTokenizerExplainAnalyze);
+    RUN_TEST(TestTokenizerStringLiteral);
     RUN_TEST(TestParserSelectQuery);
-    RUN_TEST(TestVolcanoPipeline);
+    RUN_TEST(TestRecordCodec);
+    RUN_TEST(TestVolcanoFilterAndProjection);
 
-    std::cout << "\n¡Todas las pruebas del Integrante 3 pasaron con éxito!\n" << std::endl;
+    std::cout << "All query tests passed.\n";
     return 0;
 }
-

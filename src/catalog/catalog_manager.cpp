@@ -1,4 +1,4 @@
-#include "../../include/catalog/catalog_manager.h"
+#include "catalog/catalog_manager.h"
 
 namespace minidbms {
     Status CatalogManager::CreateTable(const std::string& table_name, const Schema& schema, PageId first_page_id) {
@@ -35,3 +35,5 @@ namespace minidbms {
     }
 
 } // namespace minidbms
+
+
