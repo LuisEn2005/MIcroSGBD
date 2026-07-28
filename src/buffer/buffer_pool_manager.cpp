@@ -35,6 +35,25 @@ BufferPoolManager::BufferPoolManager(
     }
 }
 
+std::size_t BufferPoolManager::GetPinnedPageCount() const {
+    std::lock_guard<std::mutex> lock(latch_);
+
+    std::size_t pinned_pages = 0;
+    for (const auto& entry : page_table_) {
+        const FrameId frame_id = entry.second;
+        if (pages_[frame_id].pin_count_ > 0) {
+            ++pinned_pages;
+        }
+    }
+
+    return pinned_pages;
+}
+
+std::size_t BufferPoolManager::GetResidentPageCount() const {
+    std::lock_guard<std::mutex> lock(latch_);
+    return page_table_.size();
+}
+
 BufferPoolManager::~BufferPoolManager() {
     FlushAllPages();
     delete[] pages_;
@@ -303,5 +322,3 @@ void BufferPoolManager::FlushAllPages() {
 }
 
 } // namespace minidbms
-
-
