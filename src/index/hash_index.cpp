@@ -710,4 +710,114 @@ Status HashIndex::RemoveInternal(
     return Status::OK();
 }
 
+Status HashIndex::Destroy() {
+    if (header_page_id_ <= HEADER_PAGE_ID) {
+        return Status::OK();
+    }
+
+    Page* header_page = bpm_->FetchPage(header_page_id_);
+    if (header_page == nullptr) {
+        return Status::IOError(
+            "Could not fetch hash index header during destroy"
+        );
+    }
+
+    HashIndexHeaderPage header(header_page);
+    if (!header.IsInitialized()) {
+        bpm_->UnpinPage(header_page_id_, false);
+        return Status::IOError(
+            "Cannot destroy an invalid hash index header"
+        );
+    }
+
+    std::vector<PageId> primary_buckets;
+    const uint16_t bucket_count = header.GetBucketCount();
+    primary_buckets.reserve(bucket_count);
+
+    Status status = Status::OK();
+
+    for (uint16_t bucket_index = 0;
+         bucket_index < bucket_count;
+         ++bucket_index) {
+        PageId bucket_page_id = INVALID_PAGE_ID;
+        status = header.GetBucketPageId(
+            bucket_index,
+            &bucket_page_id
+        );
+
+        if (!status.ok()) {
+            break;
+        }
+
+        if (bucket_page_id != INVALID_PAGE_ID) {
+            primary_buckets.push_back(bucket_page_id);
+        }
+    }
+
+    if (!bpm_->UnpinPage(header_page_id_, false)) {
+        return Status::IOError(
+            "Could not unpin hash index header during destroy"
+        );
+    }
+
+    if (!status.ok()) {
+        return status;
+    }
+
+    std::unordered_set<PageId> visited_pages;
+
+    for (PageId primary_page_id : primary_buckets) {
+        PageId current_page_id = primary_page_id;
+
+        while (current_page_id != INVALID_PAGE_ID) {
+            if (!visited_pages.insert(current_page_id).second) {
+                return Status::IOError(
+                    "Cycle detected while destroying hash index"
+                );
+            }
+
+            Page* page = bpm_->FetchPage(current_page_id);
+            if (page == nullptr) {
+                return Status::IOError(
+                    "Could not fetch hash bucket during destroy"
+                );
+            }
+
+            HashIndexBucketPage bucket(page);
+            if (!bucket.IsInitialized()) {
+                bpm_->UnpinPage(current_page_id, false);
+                return Status::IOError(
+                    "Invalid hash bucket found during destroy"
+                );
+            }
+
+            const PageId next_page_id =
+                bucket.GetOverflowPageId();
+
+            if (!bpm_->UnpinPage(current_page_id, false)) {
+                return Status::IOError(
+                    "Could not unpin hash bucket during destroy"
+                );
+            }
+
+            if (!bpm_->DeletePage(current_page_id)) {
+                return Status::IOError(
+                    "Could not delete hash bucket during destroy"
+                );
+            }
+
+            current_page_id = next_page_id;
+        }
+    }
+
+    if (!bpm_->DeletePage(header_page_id_)) {
+        return Status::IOError(
+            "Could not delete hash index header"
+        );
+    }
+
+    header_page_id_ = INVALID_PAGE_ID;
+    return Status::OK();
+}
+
 } // namespace minidbms

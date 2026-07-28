@@ -45,6 +45,10 @@ public:
         std::vector<RecordID>* result
     ) const;
 
+    // Elimina todas las paginas físicas que pertenecen al índice.
+    // Solo debe usarse para abortar una creación o implementar DROP INDEX.
+    Status Destroy();
+
     PageId GetHeaderPageId() const {
         return header_page_id_;
     }

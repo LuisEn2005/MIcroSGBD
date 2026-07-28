@@ -1,5 +1,6 @@
 #include "storage/disk_manager.h"
 
+#include <algorithm>
 #include <array>
 #include <cstring>
 #include <ios>
@@ -86,6 +87,39 @@ DiskManager::DiskManager(const std::string& db_file)
             );
         }
     }
+
+    // Las páginas desasignadas se representan como páginas completamente
+    // vacías. Al abrir el archivo se reconstruye la lista libre sin cambiar
+    // el formato físico ni depender de metadatos volátiles.
+    std::array<char, PAGE_SIZE> page_buffer{};
+
+    for (PageId page_id = 1; page_id < num_pages_; ++page_id) {
+        db_io_.clear();
+        db_io_.seekg(GetPageOffset(page_id), std::ios::beg);
+        db_io_.read(
+            page_buffer.data(),
+            static_cast<std::streamsize>(PAGE_SIZE)
+        );
+
+        if (db_io_.gcount() != static_cast<std::streamsize>(PAGE_SIZE)) {
+            db_io_.clear();
+            throw std::runtime_error(
+                "Could not scan database free pages"
+            );
+        }
+
+        const bool is_zero_page = std::all_of(
+            page_buffer.begin(),
+            page_buffer.end(),
+            [](char byte) { return byte == 0; }
+        );
+
+        if (is_zero_page) {
+            free_pages_.insert(page_id);
+        }
+    }
+
+    db_io_.clear();
 }
 
 DiskManager::~DiskManager() {
@@ -215,7 +249,14 @@ Status DiskManager::ReadPage(
 PageId DiskManager::AllocatePage() {
     std::lock_guard<std::mutex> guard(latch_);
 
-    const PageId new_page_id = num_pages_;
+    PageId new_page_id = num_pages_;
+
+    if (!free_pages_.empty()) {
+        const auto iterator = free_pages_.begin();
+        new_page_id = *iterator;
+        free_pages_.erase(iterator);
+    }
+
     std::array<char, PAGE_SIZE> empty_page{};
 
     db_io_.clear();
@@ -223,6 +264,9 @@ PageId DiskManager::AllocatePage() {
 
     if (!db_io_) {
         db_io_.clear();
+        if (new_page_id < num_pages_) {
+            free_pages_.insert(new_page_id);
+        }
         return INVALID_PAGE_ID;
     }
 
@@ -235,10 +279,15 @@ PageId DiskManager::AllocatePage() {
 
     if (!db_io_) {
         db_io_.clear();
+        if (new_page_id < num_pages_) {
+            free_pages_.insert(new_page_id);
+        }
         return INVALID_PAGE_ID;
     }
 
-    ++num_pages_;
+    if (new_page_id == num_pages_) {
+        ++num_pages_;
+    }
 
     return new_page_id;
 }
@@ -250,7 +299,8 @@ void DiskManager::DeallocatePage(PageId page_id) {
 
     std::lock_guard<std::mutex> guard(latch_);
 
-    if (page_id >= num_pages_) {
+    if (page_id >= num_pages_ ||
+        free_pages_.find(page_id) != free_pages_.end()) {
         return;
     }
 
@@ -263,6 +313,12 @@ void DiskManager::DeallocatePage(PageId page_id) {
         static_cast<std::streamsize>(PAGE_SIZE)
     );
     db_io_.flush();
+
+    if (db_io_) {
+        free_pages_.insert(page_id);
+    } else {
+        db_io_.clear();
+    }
 }
 
 PageId DiskManager::GetNumPages() const {

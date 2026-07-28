@@ -7,6 +7,7 @@
 #include <cstddef>
 #include <fstream>
 #include <mutex>
+#include <set>
 #include <string>
 
 namespace minidbms {
@@ -28,6 +29,7 @@ namespace minidbms {
             std::fstream db_io_;
             std::string db_filename_;
             PageId num_pages_{0};
+            std::set<PageId> free_pages_;
 
             mutable std::mutex latch_;
     };
