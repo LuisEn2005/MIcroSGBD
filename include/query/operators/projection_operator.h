@@ -1,44 +1,34 @@
 #ifndef MINI_DBMS_PROJECTION_OPERATOR_H
 #define MINI_DBMS_PROJECTION_OPERATOR_H
 
-#include "../../query/operators/abstract_operator.h"
-#include <vector>
+#include "catalog/schema.h"
+#include "query/operators/abstract_operator.h"
+
+#include <cstdint>
 #include <memory>
-#include <utility>
+#include <vector>
 
 namespace minidbms {
-    class ProjectionOperator : public AbstractOperator {
-        public:
-            ProjectionOperator(std::unique_ptr<AbstractOperator> child, std::vector<uint32_t> select_fields)
-                : child_(std::move(child)), select_fields_(std::move(select_fields)) {}
 
-            Status Open() override {
-                if (!child_) {
-                    return Status(StatusCode::INVALID_ARGUMENT, "Operador hijo invalido");
-                }
-                return child_->Open();
-            }
+class ProjectionOperator : public AbstractOperator {
+public:
+    ProjectionOperator(
+        std::unique_ptr<AbstractOperator> child,
+        Schema input_schema,
+        std::vector<uint32_t> selected_fields
+    );
 
-            bool Next(Record* record, RecordID* rid) override {
-                if (!child_) {
-                    return false;
-                }
-                return child_->Next(record, rid);
-            }
+    Status Open() override;
+    bool Next(Record* record, RecordID* rid) override;
+    Status Close() override;
 
-            Status Close() override {
-                if (!child_) {
-                    return Status::OK();
-                }
-                return child_->Close();
-            }
-
-        private:
-            std::unique_ptr<AbstractOperator> child_;
-            std::vector<uint32_t> select_fields_;
-    };
+private:
+    std::unique_ptr<AbstractOperator> child_;
+    Schema input_schema_;
+    std::vector<uint32_t> selected_fields_;
+    Status projection_status_{};
+};
 
 } // namespace minidbms
 
 #endif // MINI_DBMS_PROJECTION_OPERATOR_H
-
