@@ -35,6 +35,7 @@ set(MINI_SGBD_SOURCES
     src/query/operators/seq_scan_operator.cpp
     src/query/operators/filter_operator.cpp
     src/query/operators/projection_operator.cpp
+    src/query/operators/index_scan_operator.cpp
 )
 
 add_library(mini_sgbd_core ${MINI_SGBD_SOURCES})
