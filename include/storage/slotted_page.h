@@ -1,10 +1,10 @@
 #ifndef MINI_DBMS_SLOTTED_PAGE_H
 #define MINI_DBMS_SLOTTED_PAGE_H
 
-#include "common/status.h"
-#include "common/types.h"
-#include "storage/page.h"
-#include "storage/record.h"
+#include "../common/status.h"
+#include "../common/types.h"
+#include "../storage/page.h"
+#include "../storage/record.h"
 
 #include <cstdint>
 
