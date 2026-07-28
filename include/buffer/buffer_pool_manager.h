@@ -30,12 +30,36 @@ namespace minidbms {
       uint64_t GetDiskReads() const { return disk_reads_; }
       uint64_t GetDiskWrites() const { return disk_writes_; }
 
+      struct BufferPoolStatsSnapshot {
+          uint64_t buffer_hits{0};
+          uint64_t buffer_misses{0};
+          uint64_t disk_reads{0};
+          uint64_t disk_writes{0};
+      };
+
+      BufferPoolStatsSnapshot GetStatsSnapshot() const {
+          std::lock_guard<std::mutex> lock(const_cast<std::mutex&>(latch_));
+          return {buffer_hits_, buffer_misses_, disk_reads_, disk_writes_};
+      }
+
       void PopulateStats(QueryStats* stats) const {
           if (stats == nullptr) return;
           stats->buffer_hits = buffer_hits_;
           stats->buffer_misses = buffer_misses_;
           stats->disk_reads = disk_reads_;
           stats->disk_writes = disk_writes_;
+      }
+
+      static void PopulateDeltaStats(
+          const BufferPoolStatsSnapshot& before,
+          const BufferPoolStatsSnapshot& after,
+          QueryStats* stats
+      ) {
+          if (stats == nullptr) return;
+          stats->buffer_hits = after.buffer_hits >= before.buffer_hits ? after.buffer_hits - before.buffer_hits : 0;
+          stats->buffer_misses = after.buffer_misses >= before.buffer_misses ? after.buffer_misses - before.buffer_misses : 0;
+          stats->disk_reads = after.disk_reads >= before.disk_reads ? after.disk_reads - before.disk_reads : 0;
+          stats->disk_writes = after.disk_writes >= before.disk_writes ? after.disk_writes - before.disk_writes : 0;
       }
 
       void ResetStats() {
