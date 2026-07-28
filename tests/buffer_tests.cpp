@@ -135,6 +135,55 @@ int main() {
         assert(buffer_pool.UnpinPage(first_page_id, false));
     }
 
+    // Test 5: Prueba de Aceptación Sprint 2 — 3 frames y 10 páginas con reemplazo efectivo y métricas
+    {
+        const std::filesystem::path sprint2_file =
+            test_directory / "sprint2_acceptance.db";
+        std::filesystem::remove(sprint2_file);
+
+        std::vector<PageId> page_ids;
+        {
+            DiskManager disk_manager(sprint2_file.string());
+            ClockReplacer replacer(3);
+            BufferPoolManager buffer_pool(3, &disk_manager, &replacer);
+
+            for (int i = 0; i < 10; ++i) {
+                PageId pid = INVALID_PAGE_ID;
+                Page* p = buffer_pool.NewPage(&pid);
+                assert(p != nullptr);
+                page_ids.push_back(pid);
+
+                std::string content = "Sprint2_Page_Data_" + std::to_string(pid);
+                std::memcpy(p->GetData(), content.c_str(), content.size() + 1);
+
+                assert(buffer_pool.UnpinPage(pid, true));
+            }
+
+            assert(buffer_pool.GetDiskWrites() > 0);
+            buffer_pool.FlushAllPages();
+        }
+
+        {
+            DiskManager disk_manager(sprint2_file.string());
+            ClockReplacer replacer(3);
+            BufferPoolManager buffer_pool(3, &disk_manager, &replacer);
+
+            for (PageId pid : page_ids) {
+                Page* p = buffer_pool.FetchPage(pid);
+                assert(p != nullptr);
+
+                std::string expected = "Sprint2_Page_Data_" + std::to_string(pid);
+                std::string actual(p->GetData());
+                assert(actual == expected);
+
+                assert(buffer_pool.UnpinPage(pid, false));
+            }
+
+            assert(buffer_pool.GetBufferMisses() == 10);
+            assert(buffer_pool.GetDiskReads() == 10);
+        }
+    }
+
     std::cout << "All buffer tests passed.\n";
     return 0;
 }
