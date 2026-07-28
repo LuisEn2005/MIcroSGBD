@@ -165,6 +165,10 @@ bool BufferPoolManager::FlushPage(PageId page_id) {
 
     Page& page = pages_[table_entry->second];
 
+    if (!page.IsDirty()) {
+        return true;
+    }
+
     const Status write_status = disk_manager_->WritePage(
         page_id,
         page.GetData()
@@ -226,6 +230,9 @@ Page* BufferPoolManager::NewPage(PageId* page_id) {
 
         return nullptr;
     }
+
+    // AllocatePage escribe físicamente una página vacía.
+    ++disk_writes_;
 
     if (!came_from_free_list) {
         page_table_.erase(frame_page.GetPageId());
@@ -296,3 +303,5 @@ void BufferPoolManager::FlushAllPages() {
 }
 
 } // namespace minidbms
+
+
