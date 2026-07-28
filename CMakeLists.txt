@@ -16,6 +16,7 @@ set(MINI_SGBD_SOURCES
     src/storage/disk_manager.cpp
     src/storage/page.cpp
     src/storage/slotted_page.cpp
+    src/storage/heap_file.cpp
 
     src/buffer/clock_replacer.cpp
     src/buffer/buffer_pool_manager.cpp
@@ -65,6 +66,11 @@ target_link_libraries(storage_tests PRIVATE mini_sgbd_core)
 enable_project_warnings(storage_tests)
 add_test(NAME storage_tests COMMAND storage_tests)
 
+add_executable(heap_file_tests tests/heap_file_tests.cpp)
+target_link_libraries(heap_file_tests PRIVATE mini_sgbd_core)
+enable_project_warnings(heap_file_tests)
+add_test(NAME heap_file_tests COMMAND heap_file_tests)
+
 add_executable(buffer_tests tests/buffer_tests.cpp)
 target_link_libraries(buffer_tests PRIVATE mini_sgbd_core)
 enable_project_warnings(buffer_tests)
@@ -77,6 +83,7 @@ add_test(NAME query_tests COMMAND query_tests)
 
 set_tests_properties(
     storage_tests
+    heap_file_tests
     buffer_tests
     query_tests
     PROPERTIES
