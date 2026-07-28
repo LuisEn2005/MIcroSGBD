@@ -1,18 +1,14 @@
 #ifndef MINI_DBMS_OVERFLOW_PAGE_H
 #define MINI_DBMS_OVERFLOW_PAGE_H
 
-#include "../common/types.h"
+#include "index/bucket_page.h"
 
 namespace minidbms {
-  class HashIndexOverflowPage {
-    public:
-      bool Insert(const char* key, RecordID value);
-      bool Remove(const char* key);
-      bool GetValue(const char* key, RecordID* result);
-      PageId GetNextOverflowPageId() const;
-      void SetNextOverflowPageId(PageId page_id);
-  };
 
-}
+// Las páginas de desbordamiento utilizan exactamente el mismo formato físico
+// que una página bucket. Se mantiene este alias para expresar su función.
+using HashIndexOverflowPage = HashIndexBucketPage;
+
+} // namespace minidbms
 
 #endif // MINI_DBMS_OVERFLOW_PAGE_H

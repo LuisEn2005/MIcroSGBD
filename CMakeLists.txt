@@ -19,6 +19,11 @@ set(MINI_SGBD_SOURCES
     src/storage/heap_file.cpp
     src/storage/record_codec.cpp
 
+    src/index/hash_index_header_page.cpp
+    src/index/bucket_page.cpp
+    src/index/index_key.cpp
+    src/index/hash_index.cpp
+
     src/buffer/clock_replacer.cpp
     src/buffer/buffer_pool_manager.cpp
     
@@ -78,6 +83,11 @@ target_link_libraries(heap_file_tests PRIVATE mini_sgbd_core)
 enable_project_warnings(heap_file_tests)
 add_test(NAME heap_file_tests COMMAND heap_file_tests)
 
+add_executable(index_tests tests/index_tests.cpp)
+target_link_libraries(index_tests PRIVATE mini_sgbd_core)
+enable_project_warnings(index_tests)
+add_test(NAME index_tests COMMAND index_tests)
+
 add_executable(buffer_tests tests/buffer_tests.cpp)
 target_link_libraries(buffer_tests PRIVATE mini_sgbd_core)
 enable_project_warnings(buffer_tests)
@@ -97,6 +107,7 @@ add_test(NAME integration_tests COMMAND integration_tests)
 set_tests_properties(
     storage_tests
     heap_file_tests
+    index_tests
     buffer_tests
     query_tests
     integration_tests
