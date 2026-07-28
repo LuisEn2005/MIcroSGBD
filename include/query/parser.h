@@ -6,6 +6,7 @@
 #include <string>
 #include <vector>
 #include <memory>
+#include <utility>
 
 namespace minidbms {
     enum class StatementType { SELECT, INSERT, UPDATE, DELETE, EXPLAIN };

@@ -2,6 +2,7 @@
 #define MINI_DBMS_STATUS_H
 
 #include <string>
+#include <utility>
 
 namespace minidbms {
   enum class StatusCode {

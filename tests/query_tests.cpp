@@ -5,13 +5,13 @@
 #include <string>
 
 // Encabezados del Query Engine
-#include "../include/query/tokenizer.h"
-#include "../include/query/parser.h"
-#include "../include/query/executor.h"
-#include "../include/query/operators/abstract_operator.h"
-#include "../include/query/operators/seq_scan_operator.h"
-#include "../include/query/operators/filter_operator.h"
-#include "../include/query/operators/projection_operator.h"
+#include "query/tokenizer.h"
+#include "query/parser.h"
+#include "query/executor.h"
+#include "query/operators/abstract_operator.h"
+#include "query/operators/seq_scan_operator.h"
+#include "query/operators/filter_operator.h"
+#include "query/operators/projection_operator.h"
 
 using namespace minidbms;
 

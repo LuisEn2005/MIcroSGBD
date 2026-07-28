@@ -4,6 +4,7 @@
 #include <string>
 #include <vector>
 #include <cstdint>
+#include <utility>
 
 namespace minidbms {
   enum class TypeId { INTEGER, VARCHAR, BOOLEAN };

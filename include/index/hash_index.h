@@ -3,6 +3,7 @@
 
 #include "../buffer/buffer_pool_manager.h"
 #include "../common/status.h"
+#include <string>
 #include <vector>
 
 namespace minidbms {

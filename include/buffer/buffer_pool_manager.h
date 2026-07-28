@@ -1,9 +1,10 @@
 #ifndef MINI_DBMS_BUFFER_POOL_MANAGER_H
 #define MINI_DBMS_BUFFER_POOL_MANAGER_H
 
-#include "../storage/disk_manager.h"
-#include "../storage/page.h"
-#include "replacer.h"
+#include "common/config.h"
+#include "storage/disk_manager.h"
+#include "storage/page.h"
+#include "buffer/replacer.h"
 #include <unordered_map>
 #include <list>
 #include <mutex>
