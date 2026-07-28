@@ -1,17 +1,21 @@
-build/
-*.swp
-*.o
-mini-sgbd
-
-data/*.db
-data/*.idx
-results/*.csv
-
 # Directorios de compilación
-build-san/
+build/
 build-debug/
 build-release/
-# Base creada por la consola
-minisgbd.db
-build-release/
+build-san/
+
+# Artefactos de compilación y editor
+*.o
+*.swp
+mini-sgbd
+
+# Archivos generados por el Mini-SGBD
+data/*.db
+data/*.idx
 data/*.sql
+minisgbd.db
+
+# Resultados reproducibles generados por scripts
+results/*.csv
+results/*.md
+results/*.png
