@@ -15,6 +15,16 @@ namespace minidbms {
             Status GetTableSchema(const std::string& table_name, Schema* schema) const;
             Status GetTableFirstPageId(const std::string& table_name, PageId* first_page_id) const;
 
+            struct IndexMetadata {
+                std::string index_name;
+                std::string table_name;
+                std::string column_name;
+                PageId header_page_id;
+            };
+
+            Status CreateIndex(const std::string& index_name, const std::string& table_name, const std::string& column_name, PageId header_page_id);
+            Status GetIndexHeaderPageId(const std::string& table_name, const std::string& column_name, PageId* header_page_id) const;
+
         private:
             struct TableMetaData {
                 std::string name;
@@ -23,6 +33,7 @@ namespace minidbms {
             };
 
             std::unordered_map<std::string, TableMetaData> tables_;
+            std::unordered_map<std::string, IndexMetadata> indexes_;
     };
 
 }
