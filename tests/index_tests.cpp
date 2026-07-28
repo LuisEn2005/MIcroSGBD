@@ -245,5 +245,51 @@ int main() {
         << std::filesystem::file_size(database_path)
         << " bytes\n";
 
+    // ============================================================
+    // Fase 3 (Sprint 3 - Integrante 2): Métricas I/O del Buffer Pool y Flush del Índice
+    // ============================================================
+    {
+        const std::filesystem::path metrics_db =
+            data_directory / "hash_index_metrics_test.db";
+        std::filesystem::remove(metrics_db);
+
+        DiskManager disk_manager(metrics_db.string());
+        ClockReplacer replacer(4);
+        BufferPoolManager bpm(4, &disk_manager, &replacer);
+
+        PageId header_pid = INVALID_PAGE_ID;
+        std::unique_ptr<HashIndex> index;
+
+        Status status = HashIndex::Create(&bpm, 4, &index, &header_pid);
+        assert(status.ok());
+
+        bpm.ResetStats();
+
+        for (int i = 0; i < 50; ++i) {
+            status = index->Insert(
+                KeyFor(i),
+                RecordID{static_cast<PageId>(10 + i), static_cast<SlotId>(i)}
+            );
+            assert(status.ok());
+        }
+
+        uint64_t initial_writes = bpm.GetDiskWrites();
+        uint64_t initial_misses = bpm.GetBufferMisses();
+        assert(initial_misses > 0);
+
+        uint64_t hits_before = bpm.GetBufferHits();
+        std::vector<RecordID> search_res;
+        status = index->GetValue(KeyFor(0), &search_res);
+        assert(status.ok());
+        assert(!search_res.empty());
+        uint64_t hits_after = bpm.GetBufferHits();
+        assert(hits_after >= hits_before);
+
+        bpm.FlushAllPages();
+        assert(bpm.GetDiskWrites() >= initial_writes);
+
+        std::cout << "Sprint 3 Integrante 2: Index Buffer Pool I/O Metrics & Flush tests PASSED.\n";
+    }
+
     return 0;
 }
