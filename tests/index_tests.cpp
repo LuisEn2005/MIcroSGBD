@@ -152,6 +152,22 @@ int main() {
         // 143 pares con un solo bucket deben crear overflow.
         assert(CountBucketChain(bpm, index_header_page_id) >= 3);
 
+        // Libera espacio en el bucket primario y vuelve a insertar
+        // un par que ya vive en una página overflow. No debe duplicarse.
+        status = index->Remove(KeyFor(0));
+        assert(status.ok());
+
+        status = index->Insert(
+            KeyFor(139),
+            RecordID{1139, 139}
+        );
+        assert(status.ok());
+
+        status = index->GetValue(KeyFor(139), &result);
+        assert(status.ok());
+        assert(result.size() == 1);
+        assert(result[0] == RecordID({1139, 139}));
+
         status = index->Remove("duplicate", duplicate_rid_2);
         assert(status.ok());
 
