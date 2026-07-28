@@ -288,6 +288,13 @@ int main() {
         bpm.FlushAllPages();
         assert(bpm.GetDiskWrites() >= initial_writes);
 
+        QueryStats stats;
+        bpm.PopulateStats(&stats);
+        assert(stats.buffer_hits == bpm.GetBufferHits());
+        assert(stats.buffer_misses == bpm.GetBufferMisses());
+        assert(stats.disk_reads == bpm.GetDiskReads());
+        assert(stats.disk_writes == bpm.GetDiskWrites());
+
         std::cout << "Sprint 3 Integrante 2: Index Buffer Pool I/O Metrics & Flush tests PASSED.\n";
     }
 
