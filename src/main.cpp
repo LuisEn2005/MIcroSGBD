@@ -8,11 +8,13 @@ using namespace minidbms;
 
 void PrintStats(const QueryStats& stats) {
     std::cout << "\n--- Statistics ---" << std::endl;
-    std::cout << "Execution Time : " << stats.execution_time_ms << " ms" << std::endl;
-    std::cout << "Buffer Hits    : " << stats.buffer_hits << std::endl;
-    std::cout << "Buffer Misses  : " << stats.buffer_misses << std::endl;
-    std::cout << "Disk Reads     : " << stats.pages_read << std::endl;
-    std::cout << "Pages Scanned  : " << stats.pages_read << std::endl;
+    std::cout << "Execution Time   : " << stats.execution_time_ms << " ms" << std::endl;
+    std::cout << "Buffer Hits      : " << stats.buffer_hits << std::endl;
+    std::cout << "Buffer Misses    : " << stats.buffer_misses << std::endl;
+    std::cout << "Disk Reads       : " << stats.disk_reads << std::endl;
+    std::cout << "Disk Writes      : " << stats.disk_writes << std::endl;
+    std::cout << "Pages Scanned    : " << stats.pages_scanned << std::endl;
+    std::cout << "Records Examined : " << stats.records_examined << std::endl;
     std::cout << "------------------\n" << std::endl;
 }
 

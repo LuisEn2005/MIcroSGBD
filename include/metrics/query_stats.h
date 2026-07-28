@@ -5,11 +5,12 @@
 
 namespace minidbms {
   struct QueryStats {
-    uint64_t pages_read{0};
-    uint64_t pages_written{0};
     uint64_t buffer_hits{0};
     uint64_t buffer_misses{0};
-    uint64_t records_scanned{0};
+    uint64_t disk_reads{0};
+    uint64_t disk_writes{0};
+    uint64_t pages_scanned{0};
+    uint64_t records_examined{0};
     double execution_time_ms{0.0};
 
     void Reset() { *this = QueryStats(); }
