@@ -5,6 +5,7 @@
 #include "../storage/disk_manager.h"
 #include "../storage/page.h"
 #include "../buffer/replacer.h"
+#include "../metrics/query_stats.h"
 #include <unordered_map>
 #include <list>
 #include <mutex>
@@ -28,6 +29,14 @@ namespace minidbms {
       uint64_t GetBufferMisses() const { return buffer_misses_; }
       uint64_t GetDiskReads() const { return disk_reads_; }
       uint64_t GetDiskWrites() const { return disk_writes_; }
+
+      void PopulateStats(QueryStats* stats) const {
+          if (stats == nullptr) return;
+          stats->buffer_hits = buffer_hits_;
+          stats->buffer_misses = buffer_misses_;
+          stats->disk_reads = disk_reads_;
+          stats->disk_writes = disk_writes_;
+      }
 
       void ResetStats() {
           std::lock_guard<std::mutex> lock(latch_);

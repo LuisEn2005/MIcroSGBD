@@ -5,6 +5,7 @@
 #include "../../include/query/operators/projection_operator.h"
 #include "../../include/storage/heap_file.h"
 #include <chrono>
+#include <vector>
 
 namespace minidbms {
     Status QueryExecutor::Execute(const SQLStatement& stmt, QueryStats* stats) {
@@ -150,7 +151,6 @@ namespace minidbms {
                     break;
                 }
             }
-        }
 
         if (index_cond_idx != -1) {
             const auto& cond = select_stmt.conditions[index_cond_idx];

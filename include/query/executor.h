@@ -1,27 +1,35 @@
 #ifndef MINI_DBMS_EXECUTOR_H
 #define MINI_DBMS_EXECUTOR_H
 
-#include "../query/parser.h"
-#include "../query/operators/abstract_operator.h"
-#include "../metrics/query_stats.h"
-#include "../catalog/catalog_manager.h"
-#include "../buffer/buffer_pool_manager.h"
+#include "buffer/buffer_pool_manager.h"
+#include "catalog/catalog_manager.h"
+#include "common/status.h"
+#include "metrics/query_stats.h"
+#include "query/operators/abstract_operator.h"
+#include "query/parser.h"
+
+#include <memory>
 
 namespace minidbms {
-    class QueryExecutor {
-        public:
-            QueryExecutor(CatalogManager* catalog, BufferPoolManager* bpm)
-                : catalog_(catalog), bpm_(bpm) {}
 
-            Status Execute(const SQLStatement& stmt, QueryStats* stats);
+class QueryExecutor {
+public:
+    QueryExecutor(CatalogManager* catalog, BufferPoolManager* bpm)
+        : catalog_(catalog), bpm_(bpm) {}
 
-        private:
-            std::unique_ptr<AbstractOperator> BuildPlan(const SelectStatement& select_stmt);
+    Status Execute(const SQLStatement& stmt, QueryStats* stats);
 
-            CatalogManager* catalog_;
-            BufferPoolManager* bpm_;
-    };
+private:
+    Status BuildPlan(
+        const SelectStatement& select_stmt,
+        QueryStats* stats,
+        std::unique_ptr<AbstractOperator>* plan
+    );
 
-}
+    CatalogManager* catalog_;
+    BufferPoolManager* bpm_;
+};
+
+} // namespace minidbms
 
 #endif // MINI_DBMS_EXECUTOR_H

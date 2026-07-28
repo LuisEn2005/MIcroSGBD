@@ -17,6 +17,12 @@ set(MINI_SGBD_SOURCES
     src/storage/page.cpp
     src/storage/slotted_page.cpp
     src/storage/heap_file.cpp
+    src/storage/record_codec.cpp
+
+    src/index/hash_index_header_page.cpp
+    src/index/bucket_page.cpp
+    src/index/index_key.cpp
+    src/index/hash_index.cpp
 
     src/buffer/clock_replacer.cpp
     src/buffer/buffer_pool_manager.cpp
@@ -28,6 +34,10 @@ set(MINI_SGBD_SOURCES
     src/query/tokenizer.cpp
     src/query/parser.cpp
     src/query/executor.cpp
+    src/query/operators/seq_scan_operator.cpp
+    src/query/operators/filter_operator.cpp
+    src/query/operators/projection_operator.cpp
+    src/query/operators/index_scan_operator.cpp
 )
 
 add_library(mini_sgbd_core ${MINI_SGBD_SOURCES})
@@ -76,6 +86,11 @@ target_link_libraries(heap_file_tests PRIVATE mini_sgbd_core)
 enable_project_warnings(heap_file_tests)
 add_test(NAME heap_file_tests COMMAND heap_file_tests)
 
+add_executable(index_tests tests/index_tests.cpp)
+target_link_libraries(index_tests PRIVATE mini_sgbd_core)
+enable_project_warnings(index_tests)
+add_test(NAME index_tests COMMAND index_tests)
+
 add_executable(buffer_tests tests/buffer_tests.cpp)
 target_link_libraries(buffer_tests PRIVATE mini_sgbd_core)
 enable_project_warnings(buffer_tests)
@@ -100,6 +115,7 @@ add_test(NAME sprint3_acceptance_test COMMAND sprint3_acceptance_test)
 set_tests_properties(
     storage_tests
     heap_file_tests
+    index_tests
     buffer_tests
     query_tests
     integration_tests
@@ -107,3 +123,5 @@ set_tests_properties(
     PROPERTIES
         WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
 )
+
+

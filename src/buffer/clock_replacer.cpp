@@ -9,7 +9,7 @@ ClockReplacer::ClockReplacer(std::size_t num_pages)
       in_replacer_(num_pages, false) {}
 
 bool ClockReplacer::Victim(FrameId* frame_id) {
-    if (Size() == 0) {
+    if (frame_id == nullptr || Size() == 0) {
         return false;
     }
 
@@ -73,3 +73,5 @@ std::size_t ClockReplacer::Size() {
 }
 
 } // namespace minidbms
+
+
