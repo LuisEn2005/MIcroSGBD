@@ -1,44 +1,93 @@
-# Guía de Comandos y EXPLAIN ANALYZE
+# Comandos soportados
 
-El Mini-SGBD soporta la ejecución interactiva de sentencias SQL y la inspección cuantitativa del plan de ejecución mediante `EXPLAIN ANALYZE`.
+## CREATE TABLE
 
-## Comandos Soportados
-
-### 1. Definición de Tablas (`CREATE TABLE`)
 ```sql
-CREATE TABLE users (id INT, name CHAR(30), age INT, active BOOLEAN);
+CREATE TABLE users (
+    id INT,
+    name VARCHAR(30),
+    score INT,
+    active BOOLEAN
+);
 ```
 
-### 2. Creación de Índices Persistentes (`CREATE INDEX`)
+Los nombres de columna deben ser únicos. Los tipos soportados son `INT`,
+`INTEGER`, `CHAR(n)`, `VARCHAR(n)`, `BOOL` y `BOOLEAN`.
+
+## INSERT
+
+```sql
+INSERT INTO users VALUES (-5, 'O''Brien', NULL, true);
+```
+
+- Los `VARCHAR` deben escribirse entre comillas.
+- Una comilla dentro de una cadena se escapa duplicándola: `'O''Brien'`.
+- Los enteros negativos están soportados.
+- `NULL` puede insertarse o asignarse durante un `UPDATE`.
+
+## SELECT
+
+```sql
+SELECT id, name
+FROM users
+WHERE id >= -5 AND active = true;
+```
+
+La consola imprime las columnas y filas obtenidas. Los predicados conectados
+mediante `AND` se ejecutan como una cadena de operadores `Filter`.
+
+## CREATE INDEX
+
 ```sql
 CREATE INDEX idx_users_id ON users(id);
 ```
 
-### 3. Inserción de Registros (`INSERT`)
+Un índice Hash se utiliza únicamente para igualdad sobre la columna indexada.
+Las consultas de rango siguen usando `SeqScan`.
+
+## UPDATE
+
 ```sql
-INSERT INTO users VALUES (1, 'Ana', 25, true);
+UPDATE users
+SET score = 20
+WHERE id = -5 AND active = true;
 ```
 
-### 4. Consultas con Métricas (`SELECT` / `EXPLAIN ANALYZE`)
+La consola informa la cantidad de filas afectadas. Las entradas de todos los
+índices se mantienen mediante `TableStorage`.
+
+## DELETE
+
 ```sql
-EXPLAIN ANALYZE SELECT * FROM users WHERE id = 1;
+DELETE FROM users
+WHERE id = -5;
 ```
 
-#### Salida Formateada de `EXPLAIN ANALYZE`:
+## EXPLAIN ANALYZE
+
+```sql
+EXPLAIN ANALYZE
+SELECT * FROM users WHERE id = -5;
+```
+
+`EXPLAIN` requiere la palabra `ANALYZE`, porque el sistema ejecuta la consulta
+y reporta métricas reales:
+
 ```text
--> Plan: IndexScan
-   Execution time: 0.162 ms
-   Disk reads: 4
-   Disk writes: 0
-   Buffer hits: 2
-   Buffer misses: 4
-   Pages scanned: 0
-   Records examined: 1
-   Rows returned: 1
+Plan: IndexScan o SeqScan
+Execution time
+Disk reads / writes
+Buffer hits / misses
+Pages scanned
+Records examined
+Rows returned
 ```
 
-## Ejecución de Benchmarks Automatizados
+## Benchmarks
+
 ```bash
 ./scripts/run_benchmarks.sh
 ```
-Exporta la matriz completa de resultados a `results/sprint4_benchmark_results.csv`.
+
+El script crea un build `Release`, ejecuta la aceptación de estabilización y
+genera `results/sprint5_experiments_summary.csv`.
