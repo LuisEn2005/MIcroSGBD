@@ -56,8 +56,11 @@ Page* BufferPoolManager::FetchPage(PageId page_id) {
         ++page.pin_count_;
         replacer_->Pin(frame_id);
 
+        ++buffer_hits_;
         return &page;
     }
+
+    ++buffer_misses_;
 
     FrameId frame_id = INVALID_FRAME_ID;
     bool came_from_free_list = false;
@@ -88,6 +91,8 @@ Page* BufferPoolManager::FetchPage(PageId page_id) {
         return nullptr;
     }
 
+    ++disk_reads_;
+
     if (!came_from_free_list) {
         if (frame_page.IsDirty()) {
             const Status write_status = disk_manager_->WritePage(
@@ -99,6 +104,8 @@ Page* BufferPoolManager::FetchPage(PageId page_id) {
                 replacer_->Unpin(frame_id);
                 return nullptr;
             }
+
+            ++disk_writes_;
         }
 
         page_table_.erase(frame_page.GetPageId());
@@ -167,6 +174,7 @@ bool BufferPoolManager::FlushPage(PageId page_id) {
         return false;
     }
 
+    ++disk_writes_;
     page.SetDirty(false);
     return true;
 }
@@ -201,6 +209,8 @@ Page* BufferPoolManager::NewPage(PageId* page_id) {
             replacer_->Unpin(frame_id);
             return nullptr;
         }
+
+        ++disk_writes_;
     }
 
     // La página física se asigna recién después de confirmar que existe frame.
@@ -279,6 +289,7 @@ void BufferPoolManager::FlushAllPages() {
         );
 
         if (write_status.ok()) {
+            ++disk_writes_;
             page.SetDirty(false);
         }
     }

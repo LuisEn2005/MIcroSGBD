@@ -24,6 +24,19 @@ namespace minidbms {
 
       std::size_t GetPoolSize() const { return pool_size_; }
 
+      uint64_t GetBufferHits() const { return buffer_hits_; }
+      uint64_t GetBufferMisses() const { return buffer_misses_; }
+      uint64_t GetDiskReads() const { return disk_reads_; }
+      uint64_t GetDiskWrites() const { return disk_writes_; }
+
+      void ResetStats() {
+          std::lock_guard<std::mutex> lock(latch_);
+          buffer_hits_ = 0;
+          buffer_misses_ = 0;
+          disk_reads_ = 0;
+          disk_writes_ = 0;
+      }
+
     private:
       std::size_t pool_size_;
       DiskManager* disk_manager_;
@@ -32,6 +45,11 @@ namespace minidbms {
       std::unordered_map<PageId, FrameId> page_table_;
       std::list<FrameId> free_list_;
       std::mutex latch_;
+
+      uint64_t buffer_hits_{0};
+      uint64_t buffer_misses_{0};
+      uint64_t disk_reads_{0};
+      uint64_t disk_writes_{0};
   };
 
 }
