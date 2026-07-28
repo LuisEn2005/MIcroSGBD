@@ -34,4 +34,24 @@ namespace minidbms {
         return Status::OK();
     }
 
+    Status CatalogManager::CreateIndex(const std::string& index_name, const std::string& table_name, const std::string& column_name, HashIndex* index_ptr) {
+        (void)index_name;
+        std::string key = table_name + "." + column_name;
+        indexes_[key] = index_ptr;
+        return Status::OK();
+    }
+
+    bool CatalogManager::HasIndex(const std::string& table_name, const std::string& column_name) const {
+        std::string key = table_name + "." + column_name;
+        return indexes_.find(key) != indexes_.end();
+    }
+
+    HashIndex* CatalogManager::GetIndex(const std::string& table_name, const std::string& column_name) const {
+        std::string key = table_name + "." + column_name;
+        auto it = indexes_.find(key);
+        if (it != indexes_.end()) {
+            return it->second;
+        }
+        return nullptr;
+    }
 } // namespace minidbms

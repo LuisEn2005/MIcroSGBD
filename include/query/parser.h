@@ -9,7 +9,7 @@
 #include <utility>
 
 namespace minidbms {
-    enum class StatementType { SELECT, INSERT, UPDATE, DELETE, EXPLAIN };
+    enum class StatementType { SELECT, INSERT, UPDATE, DELETE, EXPLAIN, CREATE_INDEX};
 
     struct Condition {
         std::string column;
@@ -39,6 +39,15 @@ namespace minidbms {
             std::string table_name;
             std::vector<std::string> values;
     };
+    
+    class CreateIndexStatement : public SQLStatement {
+        public:
+            StatementType GetType() const override { return StatementType::CREATE_INDEX; }
+
+            std::string index_name;
+            std::string table_name;
+            std::string column_name;
+    };
 
     class Parser {
         public:
@@ -52,6 +61,7 @@ namespace minidbms {
 
             Status ParseSelect(std::unique_ptr<SQLStatement>* stmt);
             Status ParseInsert(std::unique_ptr<SQLStatement>* stmt);
+            Status ParseCreateIndex(std::unique_ptr<SQLStatement>* stmt);
 
             std::vector<Token> tokens_;
             size_t cursor_{0};

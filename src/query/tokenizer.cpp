@@ -1,4 +1,4 @@
-#include "query/tokenizer.h"
+#include "../../include/query/tokenizer.h"
 
 #include <cctype>
 #include <algorithm>
@@ -21,6 +21,7 @@ namespace minidbms {
     }
 
     std::vector<Token> Tokenizer::Tokenize() {
+        cursor_ = 0;
         std::vector<Token> tokens;
 
         while (cursor_ < sql_.size()) {
