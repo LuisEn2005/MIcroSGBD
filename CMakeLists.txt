@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 3.10)
 
 project(
     mini-sgbd
-    VERSION 0.1.0
+    VERSION 1.0.0
     LANGUAGES CXX
 )
 
@@ -107,3 +107,32 @@ add_minidb_test(sprint4_query_tests tests/sprint4_query_tests.cpp)
 add_minidb_test(sprint5_stabilization_tests tests/sprint5_stabilization_tests.cpp)
 add_minidb_test(sprint5_experiments tests/sprint5_experiments.cpp)
 set_tests_properties(sprint5_experiments PROPERTIES LABELS "benchmark" TIMEOUT 180)
+
+add_minidb_test(
+    sprint6_final_acceptance_tests
+    tests/sprint6_final_acceptance_tests.cpp
+)
+set_tests_properties(
+    sprint6_final_acceptance_tests
+    PROPERTIES
+        LABELS "acceptance"
+        TIMEOUT 300
+)
+
+# Benchmark final: se compila, pero no se ejecuta dentro de CTest para no
+# alargar las validaciones normales. Se lanza con scripts/run_final_benchmarks.sh.
+add_executable(
+    sprint6_final_benchmarks
+    tests/sprint6_final_benchmarks.cpp
+)
+target_link_libraries(
+    sprint6_final_benchmarks
+    PRIVATE
+        mini_sgbd_core
+)
+enable_project_warnings(sprint6_final_benchmarks)
+if(MSVC)
+    target_compile_options(sprint6_final_benchmarks PRIVATE /UNDEBUG)
+else()
+    target_compile_options(sprint6_final_benchmarks PRIVATE -UNDEBUG)
+endif()

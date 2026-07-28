@@ -1,0 +1,11 @@
+CREATE TABLE users (id INT, name VARCHAR(30), age INT, active BOOLEAN);
+CREATE INDEX idx_users_id ON users(id);
+INSERT INTO users VALUES (1, 'Ana', 25, true);
+INSERT INTO users VALUES (2, 'Luis', 42, false);
+INSERT INTO users VALUES (3, 'O''Brien', NULL, true);
+SELECT * FROM users;
+EXPLAIN ANALYZE SELECT * FROM users WHERE id = 2;
+UPDATE users SET age = 43 WHERE id = 2;
+DELETE FROM users WHERE id = 1;
+SELECT id, name, age, active FROM users;
+exit;

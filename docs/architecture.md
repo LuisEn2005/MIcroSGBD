@@ -118,3 +118,21 @@ páginas reservadas para evitar objetos huérfanos.
 partir de páginas completamente vacías. `AllocatePage()` reutiliza primero el
 menor `PageId` libre y solo aumenta el archivo cuando no existe una página
 reutilizable.
+
+## Sprint 6: cierre y aceptación final
+
+La prueba `sprint6_final_acceptance_tests` valida el sistema integrado con:
+
+- 10 000 registros;
+- Buffer Pool de tres frames;
+- dos tablas y dos índices;
+- inserción, actualización y eliminación;
+- transición entre NULL y una clave indexada;
+- reutilización de slot y PageId;
+- cierre y reapertura;
+- equivalencia entre IndexScan y SeqScan;
+- ausencia de páginas fijadas al finalizar.
+
+`BufferPoolManager::GetPinnedPageCount()` y
+`GetResidentPageCount()` son métodos de introspección destinados a pruebas y
+no alteran la política de reemplazo.

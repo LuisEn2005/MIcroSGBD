@@ -46,3 +46,24 @@ Resultado:
 ```text
 results/sprint5_experiments_summary.csv
 ```
+
+## Sprint 6: matriz experimental final
+
+La suite `sprint6_final_benchmarks` mide:
+
+- igualdad indexada;
+- igualdad sin índice;
+- predicado de rango;
+- predicado de baja selectividad;
+- búsqueda indexada sin coincidencias;
+- inserción masiva con y sin índice.
+
+Configuraciones:
+
+- 1 000, 10 000 y 50 000 registros;
+- 3, 10 y 50 frames;
+- caché fría y caliente;
+- cinco repeticiones por consulta en modo completo.
+
+Los resultados se escriben por ejecución y agregados. Las tablas y gráficos del
+artículo deben derivarse de esos archivos, sin editar los valores manualmente.

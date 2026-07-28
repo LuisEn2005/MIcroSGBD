@@ -91,3 +91,26 @@ Rows returned
 
 El script crea un build `Release`, ejecuta la aceptación de estabilización y
 genera `results/sprint5_experiments_summary.csv`.
+
+## Validación y entrega final
+
+```bash
+./scripts/run_final_validation.sh
+./scripts/run_final_validation.sh --sanitizers
+```
+
+## Demo automática
+
+```bash
+./scripts/run_final_demo.sh
+```
+
+## Benchmarks finales
+
+```bash
+./scripts/run_final_benchmarks.sh quick
+./scripts/run_final_benchmarks.sh
+```
+
+El modo completo usa datasets de 1 000, 10 000 y 50 000 registros, pools de
+3, 10 y 50 frames, caché fría/caliente y varias repeticiones.

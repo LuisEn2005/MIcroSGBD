@@ -41,6 +41,10 @@ public:
         return pool_size_;
     }
 
+    // Introspección usada por las pruebas finales para detectar fugas de pin.
+    std::size_t GetPinnedPageCount() const;
+    std::size_t GetResidentPageCount() const;
+
     BufferPoolStatsSnapshot GetStatsSnapshot() const {
         std::lock_guard<std::mutex> lock(latch_);
         return {
