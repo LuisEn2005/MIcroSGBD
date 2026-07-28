@@ -1,129 +1,368 @@
-#include <iostream>
-#include <vector>
-#include <string>
-#include <cassert>
-#include <random>
-#include <cstring>
-#include <memory>
+#include "buffer/buffer_pool_manager.h"
+#include "buffer/clock_replacer.h"
+#include "catalog/catalog_manager.h"
+#include "catalog/schema.h"
+#include "index/index_key.h"
+#include "query/executor.h"
+#include "query/operators/filter_operator.h"
+#include "query/operators/seq_scan_operator.h"
+#include "query/parser.h"
+#include "query/tokenizer.h"
+#include "storage/disk_manager.h"
+#include "storage/heap_file.h"
+#include "storage/record_codec.h"
+#include "storage/slotted_page.h"
 
-#include "../include/buffer/buffer_pool_manager.h"
-#include "../include/buffer/clock_replacer.h"
-#include "../include/catalog/catalog_manager.h"
-#include "../include/query/executor.h"
-#include "../include/query/parser.h"
-#include "../include/query/tokenizer.h"
-#include "../include/storage/disk_manager.h"
-#include "../include/storage/heap_file.h"
-#include "../include/storage/slotted_page.h"
-#include "../include/query/operators/seq_scan_operator.h"
+#include <cassert>
+#include <cstdint>
+#include <filesystem>
+#include <iostream>
+#include <memory>
+#include <string>
+#include <vector>
 
 using namespace minidbms;
 
-int main() {
-    std::cout << "=========================================" << std::endl;
-    std::cout << "   SPRINT 3: PRUEBA DE ACEPTACION INDEX   " << std::endl;
-    std::cout << "=========================================" << std::endl;
+namespace {
 
-    std::string db_file = "data/sprint3_acceptance.db";
-    std::remove(db_file.c_str());
+constexpr int32_t TOTAL_RECORDS = 10000;
+constexpr int32_t TARGET_ID = 7777;
+constexpr std::size_t BUFFER_FRAMES = 3;
 
-    const size_t pool_size = 50;
-    auto disk_manager = std::make_unique<DiskManager>(db_file);
-    auto replacer = std::make_unique<ClockReplacer>(pool_size);
-    auto bpm = std::make_unique<BufferPoolManager>(pool_size, disk_manager.get(), replacer.get());
-    auto catalog = std::make_unique<CatalogManager>();
-    QueryExecutor executor(catalog.get(), bpm.get());
+Schema BuildSchema() {
+    return Schema({
+        {"id", TypeId::INTEGER, sizeof(int32_t)},
+        {"age", TypeId::INTEGER, sizeof(int32_t)}
+    });
+}
 
-    std::string table_name = "usuarios";
-    std::vector<Column> columns = {
-        {"id", TypeId::INTEGER, 4},
-        {"age", TypeId::INTEGER, 4}
-    };
-    Schema schema(columns);
+Record BuildRecord(
+    const Schema& schema,
+    int32_t id
+) {
+    Record record;
+
+    const Status status = RecordCodec::Serialize(
+        schema,
+        {
+            id,
+            static_cast<int32_t>((id % 80) + 18)
+        },
+        &record
+    );
+
+    assert(status.ok());
+    return record;
+}
+
+std::unique_ptr<SQLStatement> Parse(
+    const std::string& sql
+) {
+    Tokenizer tokenizer(sql);
+    Parser parser(tokenizer.Tokenize());
+
+    std::unique_ptr<SQLStatement> statement;
+    const Status status = parser.Parse(&statement);
+
+    assert(status.ok());
+    assert(statement != nullptr);
+    return statement;
+}
+
+void CreateTableAndIndex(
+    const std::filesystem::path& database_path,
+    PageId* first_page_id,
+    PageId* index_header_page_id
+) {
+    DiskManager disk_manager(database_path.string());
+    ClockReplacer replacer(BUFFER_FRAMES);
+    BufferPoolManager bpm(
+        BUFFER_FRAMES,
+        &disk_manager,
+        &replacer
+    );
+
+    CatalogManager catalog(&bpm);
+    assert(catalog.GetInitializationStatus().ok());
+
+    Page* first_page = bpm.NewPage(first_page_id);
+    assert(first_page != nullptr);
+
+    SlottedPage slotted_page(first_page);
+    assert(slotted_page.Init().ok());
+    assert(bpm.UnpinPage(*first_page_id, true));
+
+    const Schema schema = BuildSchema();
+
+    assert(
+        catalog.CreateTable(
+            "usuarios",
+            schema,
+            *first_page_id
+        ).ok()
+    );
+
+    HeapFile heap_file(&bpm, *first_page_id);
+
+    for (int32_t id = 1;
+         id <= TOTAL_RECORDS;
+         ++id) {
+        Record record = BuildRecord(schema, id);
+        RecordID rid;
+
+        const Status status =
+            heap_file.InsertRecord(record, &rid);
+
+        assert(status.ok());
+    }
+
+    QueryExecutor executor(&catalog, &bpm);
+    std::unique_ptr<SQLStatement> create_index =
+        Parse(
+            "CREATE INDEX idx_usuarios_id "
+            "ON usuarios (id);"
+        );
+
+    QueryStats create_stats;
+    Status status = executor.Execute(
+        *create_index,
+        &create_stats
+    );
+
+    assert(status.ok());
+    assert(catalog.HasIndex("usuarios", "id"));
+
+    status = catalog.GetIndexHeaderPageId(
+        "usuarios",
+        "id",
+        index_header_page_id
+    );
+
+    assert(status.ok());
+    assert(*index_header_page_id > HEADER_PAGE_ID);
+    assert(catalog.Flush().ok());
+    bpm.FlushAllPages();
+}
+
+QueryStats RunIndexedQuery(
+    const std::filesystem::path& database_path,
+    PageId expected_first_page_id,
+    PageId expected_index_header_page_id
+) {
+    DiskManager disk_manager(database_path.string());
+    ClockReplacer replacer(BUFFER_FRAMES);
+    BufferPoolManager bpm(
+        BUFFER_FRAMES,
+        &disk_manager,
+        &replacer
+    );
+
+    CatalogManager catalog(&bpm);
+    assert(catalog.GetInitializationStatus().ok());
 
     PageId first_page_id = INVALID_PAGE_ID;
-    Page* page = bpm->NewPage(&first_page_id);
-    assert(page != nullptr && "Error al crear primera pagina de la tabla");
+    assert(
+        catalog.GetTableFirstPageId(
+            "usuarios",
+            &first_page_id
+        ).ok()
+    );
+    assert(first_page_id == expected_first_page_id);
+    assert(catalog.HasIndex("usuarios", "id"));
 
-    SlottedPage slotted_page(page);
-    slotted_page.Init();
-    
-    bpm->UnpinPage(first_page_id, true);
+    PageId index_header_page_id = INVALID_PAGE_ID;
+    assert(
+        catalog.GetIndexHeaderPageId(
+            "usuarios",
+            "id",
+            &index_header_page_id
+        ).ok()
+    );
+    assert(
+        index_header_page_id ==
+        expected_index_header_page_id
+    );
 
-    catalog->CreateTable(table_name, schema, first_page_id);
-    std::cout << "[+] Tabla '" << table_name << "' creada correctamente." << std::endl;
+    QueryExecutor executor(&catalog, &bpm);
+    std::unique_ptr<SQLStatement> select =
+        Parse(
+            "SELECT id FROM usuarios "
+            "WHERE id = 7777;"
+        );
 
-    const int TOTAL_RECORDS = 10000;
-    std::cout << "[+] Insertando " << TOTAL_RECORDS << " registros en la tabla..." << std::endl;
+    QueryStats stats;
+    const Status status = executor.Execute(
+        *select,
+        &stats
+    );
 
+    assert(status.ok());
+    assert(stats.rows_returned == 1);
+    assert(stats.records_examined == 1);
+    assert(stats.pages_scanned == 1);
 
-    HeapFile heap_file(bpm.get(), first_page_id);
-    for (int i = 1; i <= TOTAL_RECORDS; ++i) {
-        int32_t id_val = i;
-        int32_t age_val = (i % 80) + 18;
+    return stats;
+}
 
-        char record_data[8];
-        std::memcpy(record_data, &id_val, sizeof(int32_t));
-        std::memcpy(record_data + 4, &age_val, sizeof(int32_t));
+QueryStats RunSequentialQuery(
+    const std::filesystem::path& database_path,
+    PageId expected_first_page_id
+) {
+    DiskManager disk_manager(database_path.string());
+    ClockReplacer replacer(BUFFER_FRAMES);
+    BufferPoolManager bpm(
+        BUFFER_FRAMES,
+        &disk_manager,
+        &replacer
+    );
 
-        Record record(RecordID{}, 8, record_data);
-        RecordID rid;
-        Status status = heap_file.InsertRecord(record, &rid);
-        if (!status.ok()) {
-            std::cout << "[!] Fallo en el registro #" << i << std::endl;
-            assert(false && "Error al insertar registro en HeapFile");
-        }
+    CatalogManager catalog(&bpm);
+    assert(catalog.GetInitializationStatus().ok());
+
+    Schema schema({});
+    PageId first_page_id = INVALID_PAGE_ID;
+
+    assert(
+        catalog.GetTableSchema(
+            "usuarios",
+            &schema
+        ).ok()
+    );
+    assert(
+        catalog.GetTableFirstPageId(
+            "usuarios",
+            &first_page_id
+        ).ok()
+    );
+    assert(first_page_id == expected_first_page_id);
+
+    QueryStats stats;
+    bpm.ResetStats();
+
+    std::unique_ptr<AbstractOperator> plan =
+        std::make_unique<SeqScanOperator>(
+            std::make_unique<HeapFile>(
+                &bpm,
+                first_page_id
+            ),
+            &stats
+        );
+
+    plan = std::make_unique<FilterOperator>(
+        std::move(plan),
+        schema,
+        Condition{"id", "=", "7777"}
+    );
+
+    assert(plan->Open().ok());
+
+    uint64_t rows_returned = 0;
+    Record record;
+    RecordID rid;
+
+    while (plan->Next(&record, &rid)) {
+        ++rows_returned;
     }
-    std::cout << "[+] 10,000 registros insertados satisfactoriamente." << std::endl;
 
-    std::cout << "[+] Ejecutando CREATE INDEX idx_id ON usuarios ( id )..." << std::endl;
-    Tokenizer create_idx_tok("CREATE INDEX idx_id ON usuarios ( id )");
-    auto create_idx_tokens = create_idx_tok.Tokenize();
-    Parser create_idx_parser(create_idx_tokens);
+    assert(plan->Close().ok());
+    assert(rows_returned == 1);
+    assert(stats.records_examined == TOTAL_RECORDS);
 
-    std::unique_ptr<SQLStatement> create_idx_stmt;
-    Status parse_status = create_idx_parser.Parse(&create_idx_stmt);
-    assert(parse_status.ok() && "Error al parsear CREATE INDEX");
+    bpm.PopulateStats(&stats);
+    stats.rows_returned = rows_returned;
 
-    Status exec_status = executor.Execute(*create_idx_stmt, nullptr);
-    assert(exec_status.ok() && "Error al ejecutar CREATE INDEX");
-    std::cout << "[+] Indice Hash 'idx_id' creado y poblado en el catalogo." << std::endl;
+    return stats;
+}
 
-    std::cout << "[+] Seleccionando 100 claves aleatorias para validar IndexScan vs SeqScan..." << std::endl;
+void VerifyDirectPersistentLookup(
+    const std::filesystem::path& database_path
+) {
+    DiskManager disk_manager(database_path.string());
+    ClockReplacer replacer(BUFFER_FRAMES);
+    BufferPoolManager bpm(
+        BUFFER_FRAMES,
+        &disk_manager,
+        &replacer
+    );
 
-    std::mt19937 rng(42);
-    std::uniform_int_distribution<int> dist(1, TOTAL_RECORDS);
+    CatalogManager catalog(&bpm);
+    assert(catalog.GetInitializationStatus().ok());
 
-    int exitosas = 0;
-    for (int k = 0; k < 100; ++k) {
-        int target_id = dist(rng);
-        std::string sql_query = "SELECT id FROM usuarios WHERE id = " + std::to_string(target_id);
+    HashIndex* index =
+        catalog.GetIndex("usuarios", "id");
 
-        Tokenizer query_tok(sql_query);
-        auto query_tokens = query_tok.Tokenize();
+    assert(index != nullptr);
 
-        Parser query_parser(query_tokens);
-        std::unique_ptr<SQLStatement> select_stmt;
-        Status status_parse = query_parser.Parse(&select_stmt);
-        if (!status_parse.ok()) {
-            std::cout << "[!] Error parseando: " << sql_query << std::endl;
-            assert(false && "Fallo en el QueryParser");
-        }
+    std::string encoded_key;
+    assert(
+        IndexKey::Encode(
+            int32_t{TARGET_ID},
+            &encoded_key
+        ).ok()
+    );
 
-        QueryStats stats;
-        Status query_status = executor.Execute(*select_stmt, &stats);
-        if (!query_status.ok()) {
-            std::cout << "[!] Error ejecutando consulta con índice: " << sql_query << std::endl;
-            assert(false && "Fallo en QueryExecutor");
-        }
+    std::vector<RecordID> results;
+    assert(
+        index->GetValue(
+            encoded_key,
+            &results
+        ).ok()
+    );
+    assert(results.size() == 1);
+}
 
-        exitosas++;
-    }
+} // namespace
 
-    std::cout << "[+] " << exitosas << "/100 claves validadas con exito." << std::endl;
-    std::cout << "=========================================" << std::endl;
-    std::cout << "   PRUEBA DE ACEPTACION SPRINT 3: PASO   " << std::endl;
-    std::cout << "=========================================" << std::endl;
+int main() {
+    const std::filesystem::path database_path =
+        "data/sprint3_acceptance.db";
+
+    std::filesystem::create_directories("data");
+    std::filesystem::remove(database_path);
+
+    PageId first_page_id = INVALID_PAGE_ID;
+    PageId index_header_page_id = INVALID_PAGE_ID;
+
+    CreateTableAndIndex(
+        database_path,
+        &first_page_id,
+        &index_header_page_id
+    );
+
+    const QueryStats index_stats =
+        RunIndexedQuery(
+            database_path,
+            first_page_id,
+            index_header_page_id
+        );
+
+    const QueryStats sequential_stats =
+        RunSequentialQuery(
+            database_path,
+            first_page_id
+        );
+
+    VerifyDirectPersistentLookup(database_path);
+
+    assert(index_stats.records_examined <
+           sequential_stats.records_examined);
+    assert(index_stats.disk_reads <
+           sequential_stats.disk_reads);
+
+    std::cout
+        << "Sprint 3 acceptance test passed.\n"
+        << "Records: " << TOTAL_RECORDS << '\n'
+        << "Buffer frames: " << BUFFER_FRAMES << '\n'
+        << "Persistent catalog: OK\n"
+        << "Persistent hash index: OK\n"
+        << "Indexed records examined: "
+        << index_stats.records_examined << '\n'
+        << "Sequential records examined: "
+        << sequential_stats.records_examined << '\n'
+        << "Indexed disk reads: "
+        << index_stats.disk_reads << '\n'
+        << "Sequential disk reads: "
+        << sequential_stats.disk_reads << '\n';
 
     return 0;
 }

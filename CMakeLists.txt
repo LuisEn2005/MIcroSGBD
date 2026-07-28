@@ -26,10 +26,8 @@ set(MINI_SGBD_SOURCES
 
     src/buffer/clock_replacer.cpp
     src/buffer/buffer_pool_manager.cpp
-    
-    src/catalog/catalog_manager.cpp
 
-    src/index/hash_index.cpp
+    src/catalog/catalog_manager.cpp
 
     src/query/tokenizer.cpp
     src/query/parser.cpp
@@ -76,52 +74,22 @@ enable_project_warnings(mini-sgbd)
 
 enable_testing()
 
-add_executable(storage_tests tests/storage_tests.cpp)
-target_link_libraries(storage_tests PRIVATE mini_sgbd_core)
-enable_project_warnings(storage_tests)
-add_test(NAME storage_tests COMMAND storage_tests)
+function(add_minidb_test target source)
+    add_executable(${target} ${source})
+    target_link_libraries(${target} PRIVATE mini_sgbd_core)
+    enable_project_warnings(${target})
+    add_test(NAME ${target} COMMAND ${target})
+    set_tests_properties(
+        ${target}
+        PROPERTIES
+            WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    )
+endfunction()
 
-add_executable(heap_file_tests tests/heap_file_tests.cpp)
-target_link_libraries(heap_file_tests PRIVATE mini_sgbd_core)
-enable_project_warnings(heap_file_tests)
-add_test(NAME heap_file_tests COMMAND heap_file_tests)
-
-add_executable(index_tests tests/index_tests.cpp)
-target_link_libraries(index_tests PRIVATE mini_sgbd_core)
-enable_project_warnings(index_tests)
-add_test(NAME index_tests COMMAND index_tests)
-
-add_executable(buffer_tests tests/buffer_tests.cpp)
-target_link_libraries(buffer_tests PRIVATE mini_sgbd_core)
-enable_project_warnings(buffer_tests)
-add_test(NAME buffer_tests COMMAND buffer_tests)
-
-add_executable(query_tests tests/query_tests.cpp)
-target_link_libraries(query_tests PRIVATE mini_sgbd_core)
-enable_project_warnings(query_tests)
-add_test(NAME query_tests COMMAND query_tests)
-
-# Pruebas de Integracion (Fase 3)
-add_executable(integration_tests tests/integration_tests.cpp)
-target_link_libraries(integration_tests PRIVATE mini_sgbd_core)
-enable_project_warnings(integration_tests)
-add_test(NAME integration_tests COMMAND integration_tests)
-
-add_executable(sprint3_acceptance_test tests/sprint3_acceptance_test.cpp)
-target_link_libraries(sprint3_acceptance_test PRIVATE mini_sgbd_core)
-enable_project_warnings(sprint3_acceptance_test)
-add_test(NAME sprint3_acceptance_test COMMAND sprint3_acceptance_test)
-
-set_tests_properties(
-    storage_tests
-    heap_file_tests
-    index_tests
-    buffer_tests
-    query_tests
-    integration_tests
-    sprint3_acceptance_test
-    PROPERTIES
-        WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
-)
-
-
+add_minidb_test(storage_tests tests/storage_tests.cpp)
+add_minidb_test(heap_file_tests tests/heap_file_tests.cpp)
+add_minidb_test(index_tests tests/index_tests.cpp)
+add_minidb_test(buffer_tests tests/buffer_tests.cpp)
+add_minidb_test(query_tests tests/query_tests.cpp)
+add_minidb_test(integration_tests tests/integration_tests.cpp)
+add_minidb_test(sprint3_acceptance_test tests/sprint3_acceptance_test.cpp)

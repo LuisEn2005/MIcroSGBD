@@ -11,3 +11,5 @@ results/*.csv
 build-san/
 build-debug/
 build-release/
+# Base creada por la consola
+minisgbd.db
